@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Draft Assistant</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>Draft Assistant</h1>
+  <p class="subtitle">Upload your player projections CSV once. It's reused every draft until you replace it.</p>
+
+  <div id="current-csv" class="card" style="display:none">
+    <div class="card-row">
+      <strong id="csv-filename"></strong>
+      <button id="clear-btn" class="link-btn" type="button">Clear</button>
+    </div>
+    <div class="card-meta" id="csv-meta"></div>
+  </div>
+
+  <label class="upload-label" for="csv-input">
+    <input type="file" id="csv-input" accept=".csv" />
+    <span id="upload-text">Choose CSV file…</span>
+  </label>
+
+  <div id="status" class="status" role="status"></div>
+
+  <details class="help">
+    <summary>CSV format</summary>
+    <p>One row per player, with a header row. Recognized columns (case-insensitive):</p>
+    <ul>
+      <li><code>Name</code> (or Player)</li>
+      <li><code>Position</code> (or Pos)</li>
+      <li><code>Team</code> (optional but recommended, esp. for D/ST rows)</li>
+      <li><code>ProjectedPoints</code> (or Proj, FPTS, Points)</li>
+    </ul>
+  </details>
+
+  <p class="footer-hint">Then open an ESPN fantasy draft room — the assistant panel appears automatically.</p>
+
+  <script src="../shared/csv-parser.js"></script>
+  <script src="../shared/matching.js"></script>
+  <script src="../shared/storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

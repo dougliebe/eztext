@@ -1,0 +1,9 @@
+{
+  "name": "espn-draft-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension: shows your top 3 best-available players live on top of an ESPN fantasy football snake draft room.",
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}
