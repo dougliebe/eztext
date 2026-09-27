@@ -1,7 +1,7 @@
 import type { SurprisalScores, ScoredToken, ScoredWord } from '../core/surprisal';
 import type { ResolvedAnnotation } from '../core/types';
 
-interface SelectionCardProps {
+interface InspectorProps {
   selection: ResolvedAnnotation | null;
   /** Live model scores, for the alternatives; absent when the text is unscored. */
   scores: SurprisalScores | null;
@@ -17,7 +17,7 @@ interface SelectionCardProps {
  * distribution the model had at that position — the point of the surprisal tool
  * is not the number, it is *what else the word could have been*.
  */
-export function SelectionCard({ selection, scores, text, onClose }: SelectionCardProps) {
+export function Inspector({ selection, scores, text, onClose }: InspectorProps) {
   if (!selection) return null;
 
   const word = scores?.words.find((candidate) => candidate.start === selection.start) ?? null;
@@ -28,21 +28,21 @@ export function SelectionCard({ selection, scores, text, onClose }: SelectionCar
   const suggestions = readSuggestions(selection.data);
 
   return (
-    <section className="selection" aria-label="Selected text">
-      <header className="selection__head">
-        <span className="selection__eyebrow">{selection.toolName}</span>
-        <span className="selection__word">{selection.text.trim() || selection.label}</span>
+    <section className="inspector" aria-label="Inspector">
+      <header className="inspector__head">
+        <span className="inspector__eyebrow">{selection.toolName}</span>
+        <span className="inspector__word">{selection.text.trim() || selection.label}</span>
         {bits !== null && (
-          <span className="selection__bits" title="Surprisal: −log₂ P(word | preceding text)">
+          <span className="inspector__bits" title="Surprisal: −log₂ P(word | preceding text)">
             {bits.toFixed(2)} bits
           </span>
         )}
-        <span className="selection__range">
+        <span className="inspector__range">
           {selection.start}–{selection.end}
         </span>
         <button
           type="button"
-          className="btn btn--ghost btn--sm selection__close"
+          className="btn btn--ghost btn--sm inspector__close"
           onClick={onClose}
           aria-label="Clear selection"
         >
@@ -50,12 +50,12 @@ export function SelectionCard({ selection, scores, text, onClose }: SelectionCar
         </button>
       </header>
 
-      <p className="selection__context">{contextAround(text, selection.start, selection.end)}</p>
+      <p className="inspector__context">{contextAround(text, selection.start, selection.end)}</p>
 
       {word && token ? (
         <Alternatives word={word} token={token} />
       ) : (
-        <p className="selection__detail">{selection.detail ?? 'No further detail for this range.'}</p>
+        <p className="inspector__detail">{selection.detail ?? 'No further detail for this range.'}</p>
       )}
 
       {suggestions.length > 0 && <Suggestions items={suggestions} />}
@@ -68,8 +68,8 @@ function Alternatives({ word, token }: { word: ScoredWord; token: ScoredToken })
   const expected = word.expected;
 
   return (
-    <div className="selection__body">
-      <div className="selection__stats">
+    <div className="inspector__body">
+      <div className="inspector__stats">
         <Field label="Surprisal" value={`${word.bits.toFixed(2)} bits`} />
         <Field
           label="Probability"
@@ -79,7 +79,7 @@ function Alternatives({ word, token }: { word: ScoredWord; token: ScoredToken })
         {expected && <Field label="Could have saved" value={`${expected.gain.toFixed(2)} bits`} tone="warn" />}
       </div>
 
-      <p className="selection__detail">
+      <p className="inspector__detail">
         {expected ? (
           <>
             The model expected <code>{expected.text}</code> here — writing it would have cost{' '}
@@ -135,9 +135,9 @@ function Alternatives({ word, token }: { word: ScoredWord; token: ScoredToken })
 
 function Field({ label, value, tone }: { label: string; value: string; tone?: 'warn' }) {
   return (
-    <div className={`selection__stat${tone ? ` selection__stat--${tone}` : ''}`}>
-      <span className="selection__stat-label">{label}</span>
-      <span className="selection__stat-value">{value}</span>
+    <div className={`inspector__stat${tone ? ` inspector__stat--${tone}` : ''}`}>
+      <span className="inspector__stat-label">{label}</span>
+      <span className="inspector__stat-value">{value}</span>
     </div>
   );
 }
@@ -194,7 +194,7 @@ function readSuggestions(data: Record<string, unknown> | undefined): SuggestionR
 
 function Suggestions({ items }: { items: SuggestionRow[] }) {
   return (
-    <div className="selection__body">
+    <div className="inspector__body">
       <table className="alts">
         <thead>
           <tr>
@@ -209,7 +209,7 @@ function Suggestions({ items }: { items: SuggestionRow[] }) {
               <td className="alts__rank">{rank + 1}</td>
               <td className="alts__word">{item.word}</td>
               <td>
-                <span className="selection__hint">
+                <span className="inspector__hint">
                   {item.relation ? (RELATION_LABELS[item.relation] ?? item.relation) : 'similar word'}
                 </span>
               </td>

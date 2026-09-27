@@ -11,7 +11,7 @@ Type or paste text at the top, toggle tools in the toolbar, and read the results
 │                              │  tint + stacked underlines per layer    │
 │                              ├─ coverage strip: one track per tool ────┤
 ├────────────── draggable splitter ──────────────────────────────────────┤
-│ results │ stats │ JSON   —  per-tool panels, metrics, machine output   │
+│ stats │ JSON   —  per-tool panels, machine output                     │
 └─ statusbar ─────────────────────────────────────────────────────────────┘
 ```
 
@@ -98,7 +98,7 @@ export const echoTool: Tool = {
         start: current.start,
         end: current.end,
         label: current.text,
-        group: 'echo',                // drives the filter chips in the results pane
+        group: 'echo',                // drives the filter chips in the results pane (unused for now)
         detail: `Repeats “${previous.text}”.`,
         data: { wordIndex: i },       // exported in the JSON tab
       });
@@ -294,17 +294,27 @@ State lives in `App.tsx` and is deliberately small: `text`, `enabled`, `options`
 persisted; `runAnalysis` is a pure `useMemo` over them, deferred with `useDeferredValue` so
 typing never blocks on analysis.
 
+This is the vocabulary the code and these docs use. Worth keeping straight, because the app is four
+surfaces and most of what we talk about lives in a specific one.
+
+| Name | What it is |
+| --- | --- |
+| **input pane** | top left — the editable document |
+| **preview pane** | top right — the document with highlights, the coverage strip beneath it |
+| **results pane** | the bottom pane, holding the `Stats` and `JSON` tabs |
+| **inspector** | the panel that appears at the top of the results pane when you select something in the preview |
+
 ## Interaction model
 
 - **Toolbar chip** toggles a tool; **⚙** (or shift-click) opens its settings.
-- **Run model** in the input bar scores the document with the local language model (see *Surprisal*).
+- **Run model** in the input pane's bar scores the document with the local language model (see *Surprisal*).
 - **Topbar metric** (the five ratios) shades the preview by that metric — click again to clear.
 - **Hover** a highlight or a coverage block → the same annotation lights up everywhere.
-- **Click** a highlight in the preview (or a coverage block) → the results pane pins an inspector at the
-top showing the selected text in context and, for model-scored words, the whole distribution the model had
-at that position. **Click the same thing again to deselect.**
+- **Click** a highlight in the preview (or a coverage block) → the **inspector** pins to the top of the
+  results pane showing the selected text in context and, for model-scored words, the whole distribution the
+  model had at that position. **Click the same thing again to deselect.**
 - The results pane carries **statistics per tool**, not a row per annotation: a thousand rows of
-  "the = 1.2 bits" is noise, and the annotations are browsable where they are. The `JSON` tab still has the
+  "the = 1.2 bits" is noise, and annotations are browsable where they are. The `JSON` tab still has the
   full set for export.
 - **Drag the splitters** (or focus one and use arrow keys) to rebalance input / preview / results.
 
@@ -380,7 +390,7 @@ Two deliberate choices:
   range than single words because they cover far more of the page.
 - **A heatmap replaces the tool highlights** rather than layering on top of them. Two colour systems at
   once would be unreadable — tool tints mean "this tool matched", heat means "this is long/hard". The
-  coverage strip hides too, and the analysis keeps running underneath, so the Results pane is unchanged.
+  coverage strip hides too, and the analysis keeps running underneath, so the results pane is unchanged.
 
 The selection is persisted, so a reload keeps you in the same view.
 

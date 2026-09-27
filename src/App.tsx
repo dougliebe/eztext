@@ -20,7 +20,7 @@ import { compactNumber, round } from './core/text';
 import type { ResolvedAnnotation, ToolOptionValue, ToolOptions } from './core/types';
 import { SAMPLE_TEXT } from './sample-text';
 import { getTool, tools } from './tools';
-import { SelectionCard } from './components/SelectionCard';
+import { Inspector } from './components/Inspector';
 
 /**
  * State of the local model, driven by the Run button in the input pane.
@@ -51,7 +51,7 @@ export default function App() {
   // reload keeps you where you were.
   const [heatMetric, setHeatMetric] = usePersistentState<HeatMetricId | null>('preview.heatmap', null);
 
-  const [tab, setTab] = useState<TabId>('results');
+  const [tab, setTab] = useState<TabId>('stats');
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openToolId, setOpenToolId] = useState<string | null>(null);
@@ -224,7 +224,7 @@ export default function App() {
       setSelectedId(isSame ? null : annotation.id);
       setHoverId(null);
       if (isSame) return;
-      setTab('results');
+      setTab('stats');
       if (options.reveal) revealInPreview(annotation);
     },
     [selectedId, revealInPreview],
@@ -427,7 +427,7 @@ export default function App() {
             tab={tab}
             onTabChange={setTab}
             selection={
-              <SelectionCard
+              <Inspector
                 selection={selectedAnnotation}
                 scores={freshScores}
                 text={deferredText}

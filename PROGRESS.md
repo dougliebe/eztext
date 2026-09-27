@@ -22,8 +22,7 @@
 - UI: topbar metrics, tool-chip toolbar with generic options popovers, input pane (line/col, wrap
   toggle, gutter), live highlight preview with nested layers, coverage tracks per tool, resizable
   input/preview/results splitters, statusbar.
-- Results pane tabs: Results (per-tool panels, group filters, paged rows), Stats (metric cards),
-  JSON (copyable export of the whole run).
+- Results pane tabs: Stats (per-tool metric cards), JSON (copyable export of the whole run).
 - Tools: Readability only. Sentences, Verbs and Repeated words were removed as examples — they were
   demonstrations of the contract rather than things worth reading with (recoverable from git history).
 - **Surprisal model** (`npm run model`): a local process runs GPT-2 under native ONNX Runtime and serves
@@ -176,6 +175,19 @@
   and in the coverage strip alike.
 - Verified the Dale-Chall work that landed in parallel still functions against the stats-only panels
   (7 stats each, 0 row lists) and that its selection card still appears.
+
+## Pane vocabulary
+
+Fixed names, used in the code and these notes: **input pane** (top left), **preview pane** (top right,
+the highlights plus the coverage strip), **results pane** (bottom), **inspector** (the panel that opens at
+the top of the results pane when something in the preview is selected).
+- The results and stats tabs turned out to render the identical stat grids — verified in the browser, 15
+  cards each, zero differing — and had since the early commits; the annotation rows were their only real
+  difference, so removing the rows exposed the duplication rather than causing it. The Results tab is gone;
+  `Stats` and `JSON` remain, and `ToolPanel` is the single implementation (it was already stats-only).
+- `SelectionCard` is renamed `Inspector` (classes `.inspector*`) so the code says what we call it.
+- ui-check now returns to the Stats tab after its tab loop: the JSON tab *replaces* the panels, so
+  assertions after that point were finding none.
 
 ## Next steps
 - Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded

@@ -299,13 +299,18 @@ check(
   overlap.hits.map((hit) => hit.what).join(', '),
 );
 
-for (const tab of ['Stats', 'JSON', 'Results']) {
+for (const tab of ['Stats', 'JSON']) {
   await tryClick(page.locator('.tab', { hasText: new RegExp(`^${tab}`) }));
   await page.waitForTimeout(60);
   const current = await layout();
   check(`the ${tab} tab leaves the divider alone`, near(ratioY(current), ratioY(beforePanels), 0.002),
     `${pct(ratioY(beforePanels))} → ${pct(ratioY(current))}`);
 }
+
+// Back to the panels: the JSON tab replaces them, and every check below this
+// point that looks for a tool panel would find nothing.
+await tryClick(page.locator('.tab', { hasText: /^Stats/ }));
+await page.waitForTimeout(80);
 
 // --- 5. same guarantees for the horizontal axis --------------------------
 const beforeColumns = await layout();
@@ -601,14 +606,14 @@ if (!health?.ready) {
   });
 
   await page.locator('.hl[data-tool="surprisal"]', { hasText: hardest.text }).first().click();
-  await page.waitForSelector('.selection', { timeout: 5000 });
+  await page.waitForSelector('.inspector', { timeout: 5000 });
   await page.waitForTimeout(200);
 
   // Clicking the same word again is the way out of the inspector.
-  const selectedFirst = await page.evaluate(() => document.querySelector('.selection__word')?.textContent ?? null);
+  const selectedFirst = await page.evaluate(() => document.querySelector('.inspector__word')?.textContent ?? null);
   await page.locator('.hl[data-tool="surprisal"]', { hasText: hardest.text }).first().click();
   await page.waitForTimeout(200);
-  const afterSecondClick = await page.locator('.selection').count();
+  const afterSecondClick = await page.locator('.inspector').count();
   check(
     'clicking the selected word again deselects it',
     selectedFirst !== null && afterSecondClick === 0,
@@ -617,16 +622,16 @@ if (!health?.ready) {
 
   // And selecting something else still works, so the toggle is not a one-way trip.
   await page.locator('.hl[data-tool="surprisal"]', { hasText: hardest.text }).first().click();
-  await page.waitForSelector('.selection', { timeout: 5000 });
+  await page.waitForSelector('.inspector', { timeout: 5000 });
   await page.waitForTimeout(200);
 
   const card = await page.evaluate(() => ({
-    word: document.querySelector('.selection__word')?.textContent,
-    bits: document.querySelector('.selection__bits')?.textContent,
+    word: document.querySelector('.inspector__word')?.textContent,
+    bits: document.querySelector('.inspector__bits')?.textContent,
     rows: [...document.querySelectorAll('.alts tbody tr')].map((tr) =>
       [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()),
     ),
-    detail: document.querySelector('.selection__detail')?.textContent ?? '',
+    detail: document.querySelector('.inspector__detail')?.textContent ?? '',
   }));
 
   check(
@@ -652,9 +657,9 @@ if (!health?.ready) {
     `${await page.locator('.tool-panel .stat').count()} stat cards, ${await page.locator('.tool-panel .rows').count()} row lists`,
   );
 
-  await page.locator('.selection__close').click();
+  await page.locator('.inspector__close').click();
   await page.waitForTimeout(150);
-  check('the card can be dismissed', (await page.locator('.selection').count()) === 0);
+  check('the card can be dismissed', (await page.locator('.inspector').count()) === 0);
 }
 
 // --- 9. Common words: suggestions -----------------------------------------
@@ -685,13 +690,13 @@ await page.locator('.hl[data-tool="common-words"]').filter({ hasText: 'brutalist
 await page.waitForTimeout(250);
 
 const inspector = await page.evaluate(() => {
-  const node = document.querySelector('.selection');
+  const node = document.querySelector('.inspector');
   if (!node) return null;
   return {
-    eyebrow: node.querySelector('.selection__eyebrow')?.textContent?.trim() ?? null,
-    word: node.querySelector('.selection__word')?.textContent?.trim() ?? null,
+    eyebrow: node.querySelector('.inspector__eyebrow')?.textContent?.trim() ?? null,
+    word: node.querySelector('.inspector__word')?.textContent?.trim() ?? null,
     suggestions: [...node.querySelectorAll('.alts__word')].map((el) => el.textContent.trim()),
-    relations: [...node.querySelectorAll('.selection__hint')].map((el) => el.textContent.trim()),
+    relations: [...node.querySelectorAll('.inspector__hint')].map((el) => el.textContent.trim()),
   };
 });
 check(

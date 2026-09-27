@@ -1,23 +1,22 @@
 import { useState } from 'react';
-import type { ResolvedAnnotation, Stat, Tool, ToolResult } from '../core/types';
+import type { Stat, Tool, ToolResult } from '../core/types';
 import { StatGrid } from './StatGrid';
 
 interface ToolPanelProps {
   tool: Tool;
   result: ToolResult;
-  annotations: ResolvedAnnotation[];
   stats: Stat[];
 }
 
 /**
- * One tool's output in the results pane: its statistics, and nothing else.
+ * One tool's figures in the results pane's Stats tab: a header and its statistics.
  *
  * There is deliberately no list of every annotation — a thousand rows of
- * "the = 1.2 bits" is noise, and the annotations are already browsable where
- * they belong, by clicking a highlight in the preview (the selection inspector
- * at the top of this pane). The JSON tab still carries the full set for export.
+ * "the = 1.2 bits" is noise, and annotations are browsable where they belong, by
+ * clicking a highlight in the preview pane (which opens the inspector pinned above
+ * these panels). The JSON tab still carries the full set for export.
  */
-export function ToolPanel({ tool, result, annotations, stats }: ToolPanelProps) {
+export function ToolPanel({ tool, result, stats }: ToolPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   // Notes are engine diagnostics — a tool that threw — not commentary.
@@ -38,7 +37,7 @@ export function ToolPanel({ tool, result, annotations, stats }: ToolPanelProps) 
           <span className="tool-panel__dot" aria-hidden="true" />
           <span className="tool-panel__name">{tool.name}</span>
           <span className="tool-panel__count">
-            {annotations.length} annotation{annotations.length === 1 ? '' : 's'} in the preview
+            {stats.length} metric{stats.length === 1 ? '' : 's'}
           </span>
         </button>
       </header>

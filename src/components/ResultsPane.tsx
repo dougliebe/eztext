@@ -1,13 +1,11 @@
 import { useMemo } from 'react';
 import type { AnalysisRun, Stat, Tool } from '../core/types';
 import { JsonView } from './JsonView';
-import { StatGrid } from './StatGrid';
 import { ToolPanel } from './ToolPanel';
 
-export type TabId = 'results' | 'stats' | 'json';
+export type TabId = 'stats' | 'json';
 
 export const TABS: Array<{ id: TabId; label: string }> = [
-  { id: 'results', label: 'Results' },
   { id: 'stats', label: 'Stats' },
   { id: 'json', label: 'JSON' },
 ];
@@ -48,11 +46,9 @@ export function ResultsPane({
         <div className="tabs" role="tablist" aria-label="Analysis views">
           {TABS.map((entry) => {
             const badge =
-              entry.id === 'results'
-                ? analysis.annotations.length
-                : entry.id === 'stats'
-                  ? analysis.stats.length
-                  : undefined;
+              entry.id === 'stats'
+                ? analysis.stats.length
+                : undefined;
             return (
               <button
                 type="button"
@@ -84,7 +80,7 @@ export function ResultsPane({
               Pick one or more extensions in the toolbar above. They run on every keystroke and may overlap freely.
             </p>
           </div>
-        ) : tab === 'results' ? (
+        ) : tab === 'stats' ? (
           <div className="panels">
             {activeTools.map((tool) => {
               const run = analysis.byTool[tool.id];
@@ -94,28 +90,8 @@ export function ResultsPane({
                   key={tool.id}
                   tool={tool}
                   result={run.result}
-                  annotations={analysis.byToolAnnotations[tool.id] ?? []}
                   stats={statsByTool.get(tool.id) ?? []}
                 />
-              );
-            })}
-          </div>
-        ) : tab === 'stats' ? (
-          <div className="panels">
-            {activeTools.map((tool) => {
-              const stats = statsByTool.get(tool.id) ?? [];
-              if (stats.length === 0) return null;
-              return (
-                <section className="tool-panel" key={tool.id} style={{ ['--tool-color' as string]: tool.color }}>
-                  <header className="tool-panel__head tool-panel__head--static">
-                    <span className="tool-panel__dot" aria-hidden="true" />
-                    <span className="tool-panel__name">{tool.name}</span>
-                    <span className="tool-panel__count">{stats.length} metrics</span>
-                  </header>
-                  <div className="tool-panel__body">
-                    <StatGrid stats={stats} />
-                  </div>
-                </section>
               );
             })}
           </div>

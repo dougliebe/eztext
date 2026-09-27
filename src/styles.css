@@ -1417,7 +1417,7 @@ button {
    Selection inspector (pinned above the results)
    ========================================================================== */
 
-.selection {
+.inspector {
   position: sticky;
   top: 0;
   /* Above the row list's own sticky column head (z-index 2): they overlap when
@@ -1428,28 +1428,28 @@ button {
   padding: 8px 12px 10px;
 }
 
-.selection__head {
+.inspector__head {
   display: flex;
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.selection__eyebrow {
+.inspector__eyebrow {
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--muted);
 }
 
-.selection__word {
+.inspector__word {
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 650;
   color: var(--text-strong);
 }
 
-.selection__bits {
+.inspector__bits {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   padding: 1px 5px;
@@ -1458,17 +1458,17 @@ button {
   color: var(--bad);
 }
 
-.selection__range {
+.inspector__range {
   font-size: 10.5px;
   font-family: var(--font-mono);
   color: var(--muted);
 }
 
-.selection__close {
+.inspector__close {
   margin-left: auto;
 }
 
-.selection__context {
+.inspector__context {
   margin: 6px 0 8px;
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -1477,19 +1477,19 @@ button {
   word-break: break-word;
 }
 
-.selection__body {
+.inspector__body {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.selection__stats {
+.inspector__stats {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.selection__stat {
+.inspector__stat {
   display: flex;
   flex-direction: column;
   padding: 4px 8px;
@@ -1498,37 +1498,37 @@ button {
   min-width: 84px;
 }
 
-.selection__stat--warn .selection__stat-value {
+.inspector__stat--warn .inspector__stat-value {
   color: var(--warn);
 }
 
-.selection__stat-label {
+.inspector__stat-label {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
 }
 
-.selection__stat-value {
+.inspector__stat-value {
   font-size: 13px;
   font-weight: 620;
   font-variant-numeric: tabular-nums;
   color: var(--text-strong);
 }
 
-.selection__detail {
+.inspector__detail {
   font-size: 12px;
   color: var(--text);
 }
 
-.selection__detail code {
+.inspector__detail code {
   font-family: var(--font-mono);
   padding: 0 3px;
   border: 1px solid var(--border);
   background: var(--bg-1);
 }
 
-.selection__hint {
+.inspector__hint {
   font-size: 11.5px;
   color: var(--muted);
 }
