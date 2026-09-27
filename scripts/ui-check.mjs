@@ -241,6 +241,67 @@ check('input/preview divider never dips below its start during a drag',
 check('input/preview divider tracks the pointer monotonically', risingX,
   horizontal.samples.map(pct).join(' → '));
 
+// --- 6. heatmap selection ------------------------------------------------
+// Clicking a topbar metric shades the preview by it; clicking it again clears.
+const baseTopbarHeight = (await layout()).workbenchTop; // measured before activation
+const heatState = () =>
+  page.evaluate(() => {
+    const colours = new Set(
+      [...document.querySelectorAll('.heat')].map((node) => getComputedStyle(node).backgroundColor),
+    );
+    return {
+      active: [...document.querySelectorAll('.metric--active .metric__label')].map((node) => node.textContent),
+      heatSpans: document.querySelectorAll('.heat').length,
+      heatColours: colours.size,
+      toolHighlights: document.querySelectorAll('.hl').length,
+      legend: document.querySelector('.heat-legend__label')?.textContent ?? null,
+      ramp: Boolean(document.querySelector('.heat-legend__ramp')),
+      topbar: Math.round(document.querySelector('.topbar').getBoundingClientRect().height),
+    };
+  });
+const metricButton = (label) => page.locator('.metric--clickable', { hasText: label }).first();
+
+await metricButton('Words / sentence').click();
+await page.waitForTimeout(150);
+let heat = await heatState();
+check('clicking a metric shades the preview', heat.heatSpans === 11 && heat.legend === 'Words / sentence',
+  `${heat.heatSpans} sentence spans`);
+check('tool highlights are replaced while shading', heat.toolHighlights === 0);
+check('the legend replaces the tool list', heat.ramp && heat.legend === 'Words / sentence');
+
+await metricButton('Chars / word').click();
+await page.waitForTimeout(150);
+heat = await heatState();
+check('selecting another metric switches (one at a time)',
+  heat.active.length === 1 && heat.legend === 'Chars / word' && heat.heatSpans === 163,
+  `active: ${heat.active.join(', ') || 'none'}, ${heat.heatSpans} spans`);
+check('activating a metric does not resize the topbar', heat.topbar === 56, `${heat.topbar}px`);
+
+await metricButton('Chars / word').click();
+await page.waitForTimeout(150);
+heat = await heatState();
+check('clicking the same metric clears it', heat.active.length === 0 && heat.heatSpans === 0 && heat.legend === null);
+check('tool highlights come back', heat.toolHighlights > 3, `${heat.toolHighlights} highlights`);
+
+await metricButton('% unfamiliar').click();
+await page.waitForTimeout(150);
+heat = await heatState();
+check('% unfamiliar shades only unfamiliar words in one colour',
+  heat.heatSpans === 34 && heat.heatColours === 1, `${heat.heatSpans} words, ${heat.heatColours} colour(s)`);
+check('a binary metric hides the ramp', heat.ramp === false);
+
+await metricButton('% polysyllabic').click();
+await page.waitForTimeout(150);
+heat = await heatState();
+check('% polysyllabic shades only 3+ syllable words with a graded ramp',
+  heat.heatSpans === 23 && heat.heatColours > 3 && heat.ramp === true,
+  `${heat.heatSpans} words, ${heat.heatColours} shades`);
+
+await page.locator('.heat-legend .btn').click();
+await page.waitForTimeout(150);
+heat = await heatState();
+check('the Clear button resets to tool highlighting', heat.heatSpans === 0 && heat.toolHighlights > 3);
+
 await browser.close();
 console.log(`\n  ${failures === 0 ? 'all checks passed' : `${failures} CHECK(S) FAILED`}\n`);
 process.exitCode = failures === 0 ? 0 : 1;

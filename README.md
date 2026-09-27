@@ -150,12 +150,13 @@ src/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
     metrics.ts      topbar metrics, z-scores, Dale–Chall familiarity rules
+    heatmap.ts      click-a-metric preview shading (document-relative intensity)
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
     persistence.ts  namespaced localStorage + usePersistentState
     color.ts        hex → rgba helpers for layer tints
     data/           vendored data: dale-chall.ts, corpus-norms.ts (generated)
   components/
-    Toolbar, ToolOptionsEditor, InputPane, HighlightView, CoverageStrip,
+    Toolbar, ToolOptionsEditor, InputPane, HighlightView, HeatmapView, CoverageStrip,
     ResultsPane, ToolPanel, StatGrid, JsonView, Splitter
   tools/            one file per extension + index.ts registry
   dev/              headless smoke test and render check
@@ -171,6 +172,7 @@ typing never blocks on analysis.
 ## Interaction model
 
 - **Toolbar chip** toggles a tool; **⚙** (or shift-click) opens its settings.
+- **Topbar metric** (the five ratios) shades the preview by that metric — click again to clear.
 - **Hover** a highlight, result row or coverage block → the same annotation lights up everywhere.
 - **Click** a result row or coverage block → the preview scrolls to that annotation and the row is
   kept in view. Clicking `JSON` gives you the whole run, ready to copy.
@@ -203,6 +205,36 @@ higher means harder to read — so a positive σ is always "more difficult than 
 Hovering a metric shows the definition plus the comparison, e.g.
 `CLEAR corpus: 21.28 ± 9.23 (n=4,724) → −0.7σ, easier than the average excerpt.` Comparisons are
 suppressed entirely below 20 words, where the ratios are meaningless.
+
+### Heatmaps (click a metric)
+
+Each of the five ratios is a button. Clicking it shades the preview by how much every word or sentence
+contributes to that value; clicking the same one again clears it, and only one can be active at a time.
+
+| Metric | What gets shaded | Shading |
+| --- | --- | --- |
+| Words / sentence | whole sentences | hotter = more words |
+| Chars / word | every word | hotter = more letters |
+| % polysyllabic | only words of 3+ syllables | hotter = more syllables |
+| % unfamiliar | only words off the Dale–Chall list | one flat colour, no ramp |
+| Syllables / word | every word | hotter = more syllables |
+
+Every shade carries a tooltip with the measurement and how it compares within this document
+(`“Unfortunately” carries about 5 syllables — 3+ counts as polysyllabic.`), and the preview header swaps
+the tool legend for the ramp, a one-line explanation and a **Clear** button.
+
+Two deliberate choices:
+
+- **Intensity is relative to the document, not the corpus.** The question a heatmap answers is "which
+  sentences are longer *than the others here*", so the longest sentence here is always 100% hot. The
+  corpus comparison lives on the σ readouts instead. The weakest shade keeps a floor (α 0.25 for words,
+  0.14 for sentences) so low contributors are still visibly shaded, and whole sentences use a gentler
+  range than single words because they cover far more of the page.
+- **A heatmap replaces the tool highlights** rather than layering on top of them. Two colour systems at
+  once would be unreadable — tool tints mean "this tool matched", heat means "this is long/hard". The
+  coverage strip hides too, and the analysis keeps running underneath, so the Results pane is unchanged.
+
+The selection is persisted, so a reload keeps you in the same view.
 
 Everything is computed in `src/core/metrics.ts` — a pure function of the text, deliberately *outside* the
 tool registry so the topbar never depends on which extensions are on.

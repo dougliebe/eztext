@@ -186,6 +186,37 @@ button {
   line-height: 1.2;
   min-width: 40px;
   cursor: default;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: right;
+}
+
+/* Metrics that shade the preview when clicked. */
+.metric--clickable {
+  cursor: pointer;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  border-radius: var(--radius-sm);
+  transition: background-color 110ms ease, box-shadow 110ms ease;
+}
+
+.metric--clickable:hover {
+  background: var(--bg-3);
+}
+
+.metric--clickable:hover .metric__label {
+  color: var(--text);
+}
+
+.metric--active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.metric--active .metric__label {
+  color: var(--text-strong);
 }
 
 .metric__label {
@@ -776,6 +807,56 @@ button {
   margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/*
+ * Heatmap legend, shown in the preview header instead of the tool legend while
+ * a metric is shading the document.
+ */
+.heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.heat-legend__label {
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.heat-legend__ramp {
+  width: 88px;
+  height: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.heat-legend__blurb {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Heat spans in the preview. */
+.heat {
+  border-radius: 2px;
+}
+
+.heat--word {
+  cursor: help;
+}
+
+.heat:hover {
+  filter: brightness(1.18);
 }
 
 .legend__item {

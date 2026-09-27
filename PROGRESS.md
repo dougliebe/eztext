@@ -61,6 +61,23 @@
   tiny inputs, so no σ chips render.
 - `ui-check` now fails loudly if the page renders unstyled, instead of reporting a layout catastrophe
   (see the dev-server note below — it happened a third time and cost real debugging time).
+- **Click-a-metric heatmaps** (`core/heatmap.ts` + `components/HeatmapView.tsx`): the five ratio metrics
+  are buttons that shade the preview — sentences by length, words by letters, words by syllables
+  (all words for `syllables/word`, only 3+ syllable words for `% polysyllabic`), and unfamiliar words in
+  one flat colour. One active at a time; clicking the same metric again clears it; selection persists.
+- Heatmap shades are **document-relative** with a visible floor (weakest word α 0.25, weakest sentence
+  α 0.14). Measured in-browser: weakest shade Δ32 per channel over the pane background, strongest Δ142,
+  median Δ59 — the ramp is legible end to end and whole sentences stay gentle because they cover more
+  page.
+- The heatmap *replaces* tool highlights (two colour systems at once would be unreadable): the coverage
+  strip hides, the tool legend swaps for the ramp + Clear in the preview header, and the analysis keeps
+  running so the Results pane is unaffected.
+- Smoke test cross-checks the heatmap against `computeMetrics` on the same document: 11 sentence spans,
+  163 word spans, 23 polysyllables, 34 unfamiliar, and per-word values summing to 824 letters / 255
+  syllables. `ui-check` drives the clicks: switch, toggle-off, single-selection, flat-colour test for
+  `% unfamiliar`, ramp presence, and that activating a metric does not resize the topbar.
+- Caught a real accessibility bug via the render check: `aria-pressed={undefined}` made React omit the
+  attribute entirely, so the metric toggles carried no pressed state. Now `Boolean(active)`.
 - Removed the per-tool methodology footnotes; `notes` is now reserved for engine-level diagnostics
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
@@ -122,6 +139,12 @@
 - **UI verification**: `scripts/ui-check.mjs` drives the installed Chrome through `playwright-core`
   (tiny dependency, no ~100 MB browser download) and reads geometry straight from the DOM, so it
   cannot be fooled by app state. Verified to fail on the pre-fix layout and pass after.
+- **Heatmaps are a view mode, not a tool.** A tool goes through annotation → overlap → segment
+  resolution, but a heatmap is a flat non-overlapping run of styled spans, so `core/heatmap.ts` produces
+  spans directly and `HeatmapView` renders them — no segmentation, no layering, no fake registry entry.
+  Intensity is relative to the document (the heatmap answers "which are longest *here*"), while the
+  corpus comparison stays on the σ readouts. A heatmap also *replaces* tool highlights rather than
+  mixing two colour systems.
 - **Norms are corpus-relative, thresholds are not invented**: a fixed "% unfamiliar > 10% is hard"
   rule was silently wrong once measured — the CLEAR corpus averages 17.6%. Deviations are now ±σ against
   a real population, with colour only past ±1.5σ. All five ratios are "higher = harder", which is what

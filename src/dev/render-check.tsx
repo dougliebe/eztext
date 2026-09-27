@@ -10,6 +10,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import App from '../App';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
+import { HEAT_METRICS } from '../core/heatmap';
 
 const html = renderToStaticMarkup(createElement(App));
 
@@ -24,6 +25,17 @@ const checks: Array<[string, boolean]> = [
     ),
   ],
   ['metric tooltips render', html.includes('Dale–Chall list of ~3,000 familiar words')],
+  [
+    'every heat metric is a clickable toggle',
+    (() => {
+      // Scoped to metric buttons: toolbar chips carry aria-pressed too.
+      const buttons = html.match(/<button[^>]*metric--clickable[^>]*>/g) ?? [];
+      return (
+        buttons.length === Object.keys(HEAT_METRICS).length &&
+        buttons.every((tag) => /aria-pressed="(true|false)"/.test(tag))
+      );
+    })(),
+  ],
   [
     'corpus deviations render',
     html.includes('\u03C3') && html.includes(CLEAR_CORPUS.name) && html.includes(`n=${CLEAR_CORPUS.n.toLocaleString('en-US')}`),

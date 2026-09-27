@@ -9,12 +9,14 @@
  *   2. every resolved annotation appears in at least one segment;
  *   3. layers inside a segment are ordered widest → narrowest.
  */
+import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
 import { runAnalysis } from '../core/engine';
 import {
   computeMetrics,
   formatSigma,
   isFamiliarWord,
   MIN_COMPARABLE_WORDS,
+  POLYSYLLABLE_THRESHOLD,
   zScore,
 } from '../core/metrics';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
@@ -161,6 +163,100 @@ function main(): void {
     '  short documents are excluded from comparison',
     MIN_COMPARABLE_WORDS === 20 && computeMetrics('Too short.').words < MIN_COMPARABLE_WORDS,
     `cut-off ${MIN_COMPARABLE_WORDS} words`,
+  );
+
+  console.log(`\n${RULE}\nHeatmaps`);
+  const heatIds: HeatMetricId[] = [
+    'wordsPerSentence',
+    'charactersPerWord',
+    'polysyllabicShare',
+    'unfamiliarShare',
+    'syllablesPerWord',
+  ];
+  const heatmaps = new Map<HeatMetricId, HeatSpan[]>(heatIds.map((id) => [id, buildHeatmap(SAMPLE_TEXT, id)]));
+
+  for (const id of heatIds) {
+    const spans = heatmaps.get(id)!;
+    const ordered = spans.every((span, index) => index === 0 || span.start >= spans[index - 1].end);
+    const inBounds = spans.every(
+      (span) => span.start >= 0 && span.end <= SAMPLE_TEXT.length && span.end > span.start,
+    );
+    const slices = spans.every((span) => SAMPLE_TEXT.slice(span.start, span.end) === span.text);
+    const shades = spans.every((span) => span.intensity >= 0 && span.intensity <= 1);
+    const units = new Set(spans.map((span) => span.unit));
+    console.log(
+      `  ${id.padEnd(18)} ${String(spans.length).padStart(4)} spans  unit=${[...units].join('/')}  intensity ${Math.min(...spans.map((s) => s.intensity)).toFixed(2)}…${Math.max(...spans.map((s) => s.intensity)).toFixed(2)}`,
+    );
+    check(
+      `  ${id}: spans are ordered, in bounds and in shades`,
+      ordered && inBounds && slices && shades && spans.length > 0,
+      `${spans.length} spans`,
+    );
+  }
+
+  // The heatmap and the metric must agree about the same document.
+  const wordsPerSentence = heatmaps.get('wordsPerSentence')!;
+  const charactersPerWord = heatmaps.get('charactersPerWord')!;
+  const polysyllabic = heatmaps.get('polysyllabicShare')!;
+  const unfamiliar = heatmaps.get('unfamiliarShare')!;
+  const syllables = heatmaps.get('syllablesPerWord')!;
+
+  check(
+    'one span per sentence, valued in words',
+    wordsPerSentence.length === metrics.sentences && wordsPerSentence.every((span) => span.unit === 'sentence'),
+    `${wordsPerSentence.length} vs ${metrics.sentences} sentences`,
+  );
+  check(
+    'one span per word, valued in letters',
+    charactersPerWord.length === metrics.words &&
+      charactersPerWord.reduce((sum, span) => sum + span.value, 0) === metrics.letters,
+    `${charactersPerWord.length} words, ${charactersPerWord.reduce((sum, span) => sum + span.value, 0)} vs ${metrics.letters} letters`,
+  );
+  check(
+    'polysyllabic shading only covers 3+ syllable words',
+    polysyllabic.length === metrics.polysyllables &&
+      polysyllabic.every((span) => span.value >= POLYSYLLABLE_THRESHOLD),
+    `${polysyllabic.length} vs ${metrics.polysyllables} polysyllables`,
+  );
+  check(
+    'unfamiliar shading matches the unfamiliar count',
+    unfamiliar.length === metrics.unfamiliarWords &&
+      unfamiliar.every((span) => !isFamiliarWord(span.text.toLowerCase())),
+    `${unfamiliar.length} vs ${metrics.unfamiliarWords} unfamiliar`,
+  );
+  check(
+    'syllable shading covers every word and sums to the total',
+    syllables.length === metrics.words &&
+      syllables.reduce((sum, span) => sum + span.value, 0) === metrics.syllables,
+    `${syllables.length} words, ${syllables.reduce((sum, span) => sum + span.value, 0)} vs ${metrics.syllables} syllables`,
+  );
+
+  for (const id of heatIds.filter((metric) => metric !== 'unfamiliarShare')) {
+    const intensities = heatmaps.get(id)!.map((span) => span.intensity);
+    check(
+      `  ${id}: strongest span is 1.0 and the weakest stays visible`,
+      Math.max(...intensities) === 1 && Math.min(...intensities) <= 0.16,
+      `${Math.min(...intensities).toFixed(2)}…${Math.max(...intensities).toFixed(2)}`,
+    );
+  }
+  check(
+    'unfamiliar shading is a flat colour',
+    unfamiliar.every((span) => span.intensity === 1),
+    `${unfamiliar.length} spans at 1.0`,
+  );
+
+  console.log('\n  edge cases:');
+  check('  empty document yields no spans', heatIds.every((id) => buildHeatmap('', id).length === 0));
+  check(
+    '  one-word document yields a finite shade',
+    heatIds.every((id) => {
+      const spans = buildHeatmap('Zygote.', id);
+      return spans.length === 0 || spans.every((span) => Number.isFinite(span.intensity) && span.intensity > 0);
+    }),
+  );
+  check(
+    '  a document with no polysyllables yields no spans',
+    buildHeatmap('The cat sat on the mat and had fun.', 'polysyllabicShare').length === 0,
   );
 
   console.log(`\n${RULE}\nOverlap & invariants`);

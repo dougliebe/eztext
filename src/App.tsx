@@ -1,11 +1,14 @@
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
 import { CoverageStrip } from './components/CoverageStrip';
+import { HeatmapView } from './components/HeatmapView';
 import { HighlightView } from './components/HighlightView';
 import { InputPane } from './components/InputPane';
 import { ResultsPane, type TabId } from './components/ResultsPane';
 import { Splitter } from './components/Splitter';
 import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
+import { heatGradient } from './core/color';
+import { buildHeatmap, HEAT_METRICS, type HeatMetricId, type HeatMetricInfo } from './core/heatmap';
 import { computeMetrics, describeNorm, formatSigma, MIN_COMPARABLE_WORDS, zScore } from './core/metrics';
 import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
 import { usePersistentState } from './core/persistence';
@@ -23,6 +26,9 @@ export default function App() {
   const [topRatio, setTopRatio] = usePersistentState('layout.v3.top', 0.62);
   const [leftRatio, setLeftRatio] = usePersistentState('layout.v3.left', 0.42);
   const [wrap, setWrap] = usePersistentState('input.wrap', true);
+  // Which metric is shading the preview, if any. A view mode, persisted so a
+  // reload keeps you where you were.
+  const [heatMetric, setHeatMetric] = usePersistentState<HeatMetricId | null>('preview.heatmap', null);
 
   const [tab, setTab] = useState<TabId>('results');
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -41,6 +47,12 @@ export default function App() {
 
   const doc = useMemo(() => computeMetrics(deferredText), [deferredText]);
 
+  const heatmap = useMemo(
+    () => (heatMetric ? buildHeatmap(deferredText, heatMetric) : []),
+    [deferredText, heatMetric],
+  );
+  const heatInfo = heatMetric ? HEAT_METRICS[heatMetric] : null;
+
   const activeTools = useMemo(() => tools.filter((tool) => isToolEnabled(tool, enabled)), [enabled]);
 
   const counts = useMemo(() => countsByTool(analysis), [analysis]);
@@ -52,6 +64,12 @@ export default function App() {
   const deviation = useCallback(
     (raw: number, norm: MetricNorm) => (doc.words >= MIN_COMPARABLE_WORDS ? { raw, norm } : null),
     [doc.words],
+  );
+
+  /** Selecting a metric shades the preview by it; selecting it again clears. */
+  const toggleHeatmap = useCallback(
+    (id: HeatMetricId) => setHeatMetric((current) => (current === id ? null : id)),
+    [setHeatMetric],
   );
 
   const toggleTool = useCallback(
@@ -131,7 +149,7 @@ export default function App() {
           </div>
         </div>
 
-        <dl className="metrics">
+        <div className="metrics" role="group" aria-label="Document metrics">
           <Metric label="Words" value={compactNumber(doc.words)} />
           <Metric label="Sentences" value={compactNumber(doc.sentences)} />
           <Metric label="Paragraphs" value={compactNumber(doc.paragraphs)} />
@@ -146,12 +164,18 @@ export default function App() {
             value={round(doc.wordsPerSentence, 1)}
             hint="Average sentence length in words."
             deviation={deviation(doc.wordsPerSentence, CLEAR_CORPUS.metrics.wordsPerSentence)}
+            heatLabel="colour sentences by length"
+            active={heatMetric === 'wordsPerSentence'}
+            onToggle={() => toggleHeatmap('wordsPerSentence')}
           />
           <Metric
             label="Chars / word"
             value={round(doc.charactersPerWord, 2)}
             hint="Letters and digits per word — punctuation, spaces and apostrophes excluded."
             deviation={deviation(doc.charactersPerWord, CLEAR_CORPUS.metrics.charactersPerWord)}
+            heatLabel="colour words by length"
+            active={heatMetric === 'charactersPerWord'}
+            onToggle={() => toggleHeatmap('charactersPerWord')}
           />
           <Metric
             label="% polysyllabic"
@@ -159,6 +183,9 @@ export default function App() {
             hint="Share of words carrying three or more syllables (estimated from vowel groups)."
             percent
             deviation={deviation(doc.polysyllabicShare, CLEAR_CORPUS.metrics.polysyllabicShare)}
+            heatLabel="colour 3+ syllable words"
+            active={heatMetric === 'polysyllabicShare'}
+            onToggle={() => toggleHeatmap('polysyllabicShare')}
           />
           <Metric
             label="% unfamiliar"
@@ -166,14 +193,20 @@ export default function App() {
             hint={`Share of words outside the Dale–Chall list of ~3,000 familiar words, and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words).`}
             percent
             deviation={deviation(doc.unfamiliarShare, CLEAR_CORPUS.metrics.unfamiliarShare)}
+            heatLabel="mark unfamiliar words"
+            active={heatMetric === 'unfamiliarShare'}
+            onToggle={() => toggleHeatmap('unfamiliarShare')}
           />
           <Metric
             label="Syllables / word"
             value={round(doc.syllablesPerWord, 2)}
             hint="Average syllables per word, estimated with a vowel-group heuristic."
             deviation={deviation(doc.syllablesPerWord, CLEAR_CORPUS.metrics.syllablesPerWord)}
+            heatLabel="colour words by syllables"
+            active={heatMetric === 'syllablesPerWord'}
+            onToggle={() => toggleHeatmap('syllablesPerWord')}
           />
-        </dl>
+        </div>
       </header>
 
       <Toolbar
@@ -211,39 +244,57 @@ export default function App() {
             <section className="pane pane--preview">
               <header className="pane__header">
                 <h2 className="pane__title">Preview</h2>
-                <span className="pane__hint">
-                  {analysis.annotations.length} highlights · {analysis.segments.length} segments
-                </span>
-                <div className="legend" aria-label="Active tools">
-                  {activeTools.map((tool) => (
-                    <span className="legend__item" key={tool.id}>
-                      <span className="legend__swatch" style={{ backgroundColor: tool.color }} aria-hidden="true" />
-                      {tool.name}
+
+                {heatInfo ? (
+                  <>
+                    <span className="pane__hint">
+                      {heatmap.length} {heatInfo.unit === 'sentence' ? 'sentences' : 'words'} shaded
                     </span>
-                  ))}
-                </div>
+                    <HeatLegend info={heatInfo} onClear={() => setHeatMetric(null)} />
+                  </>
+                ) : (
+                  <>
+                    <span className="pane__hint">
+                      {analysis.annotations.length} highlights · {analysis.segments.length} segments
+                    </span>
+                    <div className="legend" aria-label="Active tools">
+                      {activeTools.map((tool) => (
+                        <span className="legend__item" key={tool.id}>
+                          <span className="legend__swatch" style={{ backgroundColor: tool.color }} aria-hidden="true" />
+                          {tool.name}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
               </header>
 
               <div className="pane__body pane__body--preview" ref={previewRef}>
-                <HighlightView
-                  text={deferredText}
-                  segments={analysis.segments}
+                {heatMetric ? (
+                  <HeatmapView text={deferredText} spans={heatmap} metric={heatMetric} />
+                ) : (
+                  <HighlightView
+                    text={deferredText}
+                    segments={analysis.segments}
+                    hoverId={hoverId}
+                    selectedId={selectedId}
+                    onHover={setHoverId}
+                    onSelect={selectFromPreview}
+                  />
+                )}
+              </div>
+
+              {!heatMetric && (
+                <CoverageStrip
+                  textLength={deferredText.length}
+                  activeTools={activeTools}
+                  byToolAnnotations={analysis.byToolAnnotations}
                   hoverId={hoverId}
                   selectedId={selectedId}
                   onHover={setHoverId}
-                  onSelect={selectFromPreview}
+                  onSelect={selectFromList}
                 />
-              </div>
-
-              <CoverageStrip
-                textLength={deferredText.length}
-                activeTools={activeTools}
-                byToolAnnotations={analysis.byToolAnnotations}
-                hoverId={hoverId}
-                selectedId={selectedId}
-                onHover={setHoverId}
-                onSelect={selectFromList}
-              />
+              )}
             </section>
           </div>
         </div>
@@ -289,6 +340,9 @@ function Metric({
   hint,
   deviation,
   percent,
+  active,
+  heatLabel,
+  onToggle,
 }: {
   label: string;
   value: string | number;
@@ -298,6 +352,11 @@ function Metric({
   deviation?: { raw: number; norm: MetricNorm } | null;
   /** Format the norm as a percentage rather than a plain number. */
   percent?: boolean;
+  /** Present ⇒ the metric is clickable and shades the preview. */
+  onToggle?: () => void;
+  active?: boolean;
+  /** Explains the click affordance in the tooltip. */
+  heatLabel?: string;
 }) {
   const z = deviation ? zScore(deviation.raw, deviation.norm) : null;
 
@@ -311,17 +370,63 @@ function Metric({
     deviation && z !== null
       ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, percent)} → ${formatSigma(z)}, ${z >= 0 ? 'more difficult' : 'easier'} than the average excerpt.`
       : null,
+    onToggle ? `${active ? 'Shading the preview. Click to stop' : `Click to ${heatLabel ?? 'shade the preview'}`}.` : null,
   ]
     .filter(Boolean)
     .join('\n\n');
 
-  return (
-    <div className={`metric${resolvedTone ? ` metric--${resolvedTone}` : ''}`} title={title || undefined}>
-      <dt className="metric__label">{label}</dt>
-      <dd className="metric__value">
+  const className = [
+    'metric',
+    resolvedTone ? `metric--${resolvedTone}` : '',
+    onToggle ? 'metric--clickable' : '',
+    active ? 'metric--active' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const body = (
+    <>
+      <span className="metric__label">{label}</span>
+      <span className="metric__value">
         {value}
         {z !== null && <span className="metric__sigma">{formatSigma(z)}</span>}
-      </dd>
+      </span>
+    </>
+  );
+
+  if (!onToggle) {
+    return (
+      <div className={className} title={title || undefined}>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={className}
+      title={title || undefined}
+      aria-pressed={Boolean(active)}
+      onClick={onToggle}
+    >
+      {body}
+    </button>
+  );
+}
+
+/** Ramp legend shown in the preview header while a metric is shading it. */
+function HeatLegend({ info, onClear }: { info: HeatMetricInfo; onClear: () => void }) {
+  return (
+    <div className="heat-legend">
+      <span className="heat-legend__label">{info.label}</span>
+      {!info.binary && (
+        <span className="heat-legend__ramp" style={{ background: heatGradient() }} aria-hidden="true" />
+      )}
+      <span className="heat-legend__blurb">{info.legend}</span>
+      <button type="button" className="btn btn--ghost btn--sm" onClick={onClear}>
+        Clear
+      </button>
     </div>
   );
 }
