@@ -1,4 +1,4 @@
-import { DALE_CHALL_SIZE, DALE_CHALL_WORDS } from '../core/data/dale-chall';
+import { COMMON_WORDS_SIZE, COMMON_WORDS } from '../core/data/common-words';
 import { isFamiliarWord } from '../core/metrics';
 import { commonPrefixLength, similarity, type SemanticNeighbour } from '../core/similarity';
 import { splitSentences, tokenizeWords } from '../core/text';
@@ -6,11 +6,10 @@ import type { AnnotationDraft, Stat, Tool } from '../core/types';
 
 /**
  * The other half of `% unfamiliar`: it highlights exactly the words the topbar
- * metric counts, and for each one names the nearest words that *are* on the
- * Dale–Chall list, so the number is something you can act on rather than just
- * read.
+ * metric counts, and for each one names the nearest words that *are* common, so
+ * the number is something you can act on rather than just read.
  *
- * Suggestions come from two places, in this order:
+ * Suggestions come from three places, in this order:
  *
  *   1. **Word family** — the flagged word is a listed word wearing a prefix or a
  *      derivational suffix ("enormousness" → "enormous", "reshaping" → "shape").
@@ -113,7 +112,7 @@ let indexByInitial: Map<string, string[]> | null = null;
 function bucketFor(initial: string): string[] {
   if (!indexByInitial) {
     indexByInitial = new Map();
-    for (const entry of DALE_CHALL_WORDS) {
+    for (const entry of COMMON_WORDS) {
       const key = lettersOnly(entry).charAt(0);
       if (!key) continue;
       const bucket = indexByInitial.get(key);
@@ -141,12 +140,13 @@ function familyForms(word: string): Map<string, Relation> {
     const next = new Map<string, Relation>();
 
     const visit = (stem: string, kind: Relation) => {
-      if (DALE_CHALL_WORDS.has(stem)) {
+      if (COMMON_WORDS.has(stem)) {
         if (!found.has(stem)) found.set(stem, kind);
-      } else if (stem.length >= 4 && !next.has(stem)) {
-        // Keep going only through plausible words: junk intermediates multiply.
-        next.set(stem, kind);
       }
+      // Keep reducing even through a word that is itself on the list: "reshaping"
+      // should reach both "reshape" and, one step further, "shape" — the deeper
+      // word is usually the simpler one, which is the point of the tool.
+      if (stem.length >= 4 && !next.has(stem)) next.set(stem, kind);
     };
 
     for (const current of frontier) {
@@ -159,6 +159,17 @@ function familyForms(word: string): Map<string, Relation> {
 
   return found;
 }
+
+/**
+ * Endings where a final `e` is dropped before the suffix, so the stem is
+ * restored with one: making → make, hoped → hope, larger → large.
+ *
+ * Deliberately only the inflectional ones. The rule used to apply to every
+ * vowel-initial suffix, which invented derivations that are not there —
+ * "brutal" minus "al" plus "e" is "brute", and the tool then claimed "brute"
+ * was a base word of "brutalist".
+ */
+const E_RESTORING = new Set(['ing', 'ed', 'er', 'est', 'es']);
 
 function stemCandidates(word: string): string[] {
   const out: string[] = [];
@@ -173,7 +184,7 @@ function stemCandidates(word: string): string[] {
     // A final y turns into i before most endings: happiness → happy.
     if (stem.endsWith('i')) add(`${stem.slice(0, -1)}y`);
     // An ending that starts with a vowel often replaces a final e: reshaping → reshape.
-    if (/^[aeiou]/.test(suffix)) add(`${stem}e`);
+    if (E_RESTORING.has(suffix)) add(`${stem}e`);
     // Doubled consonant: stopping → stop.
     if (/([bcdfghjklmnpqrstvwxz])\1$/.test(stem)) add(stem.slice(0, -1));
   }
@@ -241,7 +252,7 @@ export function suggestFamiliarWords(
     // process, so anything it sends is re-checked against the list here.
     for (const neighbour of semantic) {
       if (neighbour.score < semanticFloor) continue;
-      if (seen.has(neighbour.word) || !DALE_CHALL_WORDS.has(neighbour.word)) continue;
+      if (seen.has(neighbour.word) || !COMMON_WORDS.has(neighbour.word)) continue;
       seen.add(neighbour.word);
       ranked.push({ word: neighbour.word, relation: 'similar meaning', similarity: round2(neighbour.score) });
     }
@@ -318,8 +329,8 @@ function isCapitalised(text: string): boolean {
 function describe(word: string, suggestions: WordSuggestion[]): string {
   if (suggestions.length === 0) {
     return (
-      `“${word}” is not on the Dale–Chall list, and no listed word is close to it in meaning or ` +
-      `spelling — usually a name, a technical term, or simply rarer than a fourth-grader’s vocabulary.`
+      `“${word}” is not a common word, and no listed word is close to it in meaning or ` +
+      `spelling — usually a name, a technical term, or simply rarer than a word most readers know.`
     );
   }
 
@@ -339,19 +350,20 @@ function describe(word: string, suggestions: WordSuggestion[]): string {
   if (meaning.length > 0) parts.push(`${quote(meaning)} ${meaning.length === 1 ? 'is' : 'are'} closer in meaning`);
   if (spelling.length > 0) parts.push(`${quote(spelling)} ${spelling.length === 1 ? 'is' : 'are'} close in spelling`);
 
-  return `“${word}” is not on the Dale–Chall list. On the list: ${parts.join('; ')}.`;
+  return `“${word}” is not a common word. On the list: ${parts.join('; ')}.`;
 }
 
-export const daleChallTool: Tool = {
-  id: 'dale-chall',
-  name: 'Dale–Chall',
+export const commonWordsTool: Tool = {
+  id: 'common-words',
+  name: 'Common words',
   description:
-    'Every word outside the Dale–Chall list of familiar words, with the nearest listed words to ' +
+    'Every word outside the words most US readers know, with the nearest listed words to ' +
     'swap in — by meaning when the local embedding model is running, and by word family always.',
   category: 'readability',
   color: '#2f9488',
-  // Off by default: it flags ~20% of the words in ordinary prose, which is the
-  // point of the tool but a lot of colour to switch on for someone else.
+  // Off by default: it flags the words a typical reader may not know, which in
+  // ordinary prose is now a small fraction — but it is still a lot of colour to
+  // switch on for someone else.
   defaultEnabled: false,
   // Meaning-based neighbours come from the model process. Without it the tool
   // still works, from word family and spelling, so this is a pure upgrade.
@@ -457,7 +469,7 @@ export const daleChallTool: Tool = {
 
     const stats: Stat[] = [
       {
-        id: 'dale-chall.words',
+        id: 'common-words.words',
         label: 'Unfamiliar words',
         value: flagged,
         hint:
@@ -466,21 +478,21 @@ export const daleChallTool: Tool = {
             : 'every word is on the list',
         tone: 'accent',
       },
-      { id: 'dale-chall.distinct', label: 'Distinct words', value: distinct, hint: `of ${tokens.length} words` },
+      { id: 'common-words.distinct', label: 'Distinct words', value: distinct, hint: `of ${tokens.length} words` },
       {
-        id: 'dale-chall.matched',
+        id: 'common-words.matched',
         label: 'With a match',
         value: matched.size,
         hint: `of ${distinct} distinct words`,
       },
       {
-        id: 'dale-chall.common',
+        id: 'common-words.common',
         label: 'Most flagged',
         value: mostCommon ? mostCommon[0] : '—',
         hint: mostCommon ? `${mostCommon[1]}×` : undefined,
       },
       {
-        id: 'dale-chall.longest',
+        id: 'common-words.longest',
         label: 'Longest',
         value: longest || '—',
         hint: longest ? `${longest.length} letters` : undefined,
@@ -488,23 +500,23 @@ export const daleChallTool: Tool = {
       // Which source the suggestions came from, so "no match" is never mistaken
       // for "nothing exists" when the model is simply not running.
       {
-        id: 'dale-chall.source',
+        id: 'common-words.source',
         label: 'Nearest words from',
         value: signals?.similarity?.model ? shortModel(signals.similarity.model) : 'spelling only',
         hint: signals?.similarity?.model ? 'embeddings, plus word family' : 'start the model for meaning',
         tone: signals?.similarity?.model ? undefined : 'warn',
       },
       {
-        id: 'dale-chall.list',
+        id: 'common-words.list',
         label: 'Reference list',
-        value: DALE_CHALL_SIZE.toLocaleString('en-US'),
-        hint: 'words a fourth-grader knows',
+        value: COMMON_WORDS_SIZE.toLocaleString('en-US'),
+        hint: 'words most readers know',
       },
     ];
 
     if (ignoreNames) {
       stats.splice(3, 0, {
-        id: 'dale-chall.names',
+        id: 'common-words.names',
         label: 'Names ignored',
         value: ignoredNames,
         hint: 'capitalised, not sentence-initial',

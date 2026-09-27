@@ -30,8 +30,8 @@ import {
 } from '../core/metrics';
 import { contrastRatio, maxMixForContrast, mixHex, parseHex, relativeLuminance } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
-import { DALE_CHALL_WORDS } from '../core/data/dale-chall';
-import { daleChallTool, suggestFamiliarWords, type WordSuggestion } from '../tools/dale-chall.tool';
+import { COMMON_WORDS } from '../core/data/common-words';
+import { commonWordsTool, suggestFamiliarWords, type WordSuggestion } from '../tools/common-words.tool';
 import type { SimilaritySignal } from '../core/similarity';
 import type { AnnotationDraft } from '../core/types';
 import { SAMPLE_TEXT } from '../sample-text';
@@ -66,6 +66,10 @@ function main(): void {
 
   console.log(`\n${RULE}\nDocument metrics`);
   const metrics = computeMetrics(SAMPLE_TEXT);
+  // The list is what a typical reader knows, so the bundled sample — ordinary
+  // prose — is expected to contain no unfamiliar words at all. Anything that
+  // needs an unfamiliar word to exist uses this sentence instead.
+  const HARD_TEXT = 'The antediluvian brutalist edifice obfuscated the zygote.';
   const table: Array<[string, string]> = [
     ['Words', String(metrics.words)],
     ['Sentences', String(metrics.sentences)],
@@ -74,7 +78,7 @@ function main(): void {
     ['Words / sentence', metrics.wordsPerSentence.toFixed(1)],
     ['Chars / word', metrics.charactersPerWord.toFixed(2)],
     ['% polysyllabic', `${(metrics.polysyllabicShare * 100).toFixed(1)}%`],
-    ['% unfamiliar (Dale-Chall)', `${(metrics.unfamiliarShare * 100).toFixed(1)}%`],
+    ['% unfamiliar (common words)', `${(metrics.unfamiliarShare * 100).toFixed(1)}%`],
     ['Syllables / word', metrics.syllablesPerWord.toFixed(2)],
   ];
   for (const [label, value] of table) console.log(`  ${label.padEnd(26)} ${value.padStart(8)}`);
@@ -96,11 +100,13 @@ function main(): void {
       metrics.syllablesPerWord < 4 &&
       metrics.polysyllabicShare > 0 &&
       metrics.polysyllabicShare < 1 &&
-      metrics.unfamiliarShare > 0 &&
-      metrics.unfamiliarShare < 1,
+      // 0 is a legitimate share now: a passage of ordinary prose has no words
+      // outside a 24,600-word knowledge list.
+      metrics.unfamiliarShare >= 0 &&
+      metrics.unfamiliarShare <= 1,
   );
 
-  console.log('\n  familiarity rules (Dale-Chall):');
+  console.log('\n  familiarity rules (common words):');
   const familiarity: Array<[string, boolean]> = [
     ['stop', true], // on the list
     ['stops', true], // plural of a listed word
@@ -110,9 +116,9 @@ function main(): void {
     ['stopping', true], // listed directly
     ["stop's", true], // possessive
     ['afternoon-tea', true], // hyphenated, both halves listed
-    ['zygote', false],
-    ['argument', false], // genuinely absent from the list
-    ['arguments', false], // and its plural stays unfamiliar
+    ['zygote', false], // below the prevalence threshold
+    ['brutalist', false], // absent from the source entirely
+    ['revisualization', false], // absent, and not rescued by its stem
   ];
   for (const [word, expected] of familiarity) {
     const actual = isFamiliarWord(word);
@@ -305,6 +311,8 @@ function main(): void {
     'syllablesPerWord',
   ];
   const heatmaps = new Map<HeatMetricId, HeatSpan[]>(heatIds.map((id) => [id, buildHeatmap(SAMPLE_TEXT, id)]));
+  const hardMetrics = computeMetrics(HARD_TEXT);
+  const hardUnfamiliar = buildHeatmap(HARD_TEXT, 'unfamiliarShare');
 
   for (const id of heatIds) {
     const spans = heatmaps.get(id)!;
@@ -320,7 +328,7 @@ function main(): void {
     );
     check(
       `  ${id}: spans are ordered, in bounds and in shades`,
-      ordered && inBounds && slices && shades && spans.length > 0,
+      ordered && inBounds && slices && shades && (spans.length > 0 || id === 'unfamiliarShare'),
       `${spans.length} spans`,
     );
   }
@@ -351,9 +359,15 @@ function main(): void {
   );
   check(
     'unfamiliar shading matches the unfamiliar count',
-    unfamiliar.length === metrics.unfamiliarWords &&
-      unfamiliar.every((span) => !isFamiliarWord(span.text.toLowerCase())),
-    `${unfamiliar.length} vs ${metrics.unfamiliarWords} unfamiliar`,
+    hardUnfamiliar.length === hardMetrics.unfamiliarWords &&
+      hardUnfamiliar.length > 0 &&
+      hardUnfamiliar.every((span) => !isFamiliarWord(span.text.toLowerCase())),
+    `${hardUnfamiliar.length} vs ${hardMetrics.unfamiliarWords} in the hard text`,
+  );
+  check(
+    'ordinary prose needs no unfamiliar shading',
+    unfamiliar.length === 0 && metrics.unfamiliarWords === 0,
+    `${unfamiliar.length} spans for ${metrics.words} words`,
   );
   check(
     'syllable shading covers every word and sums to the total',
@@ -372,8 +386,8 @@ function main(): void {
   }
   check(
     'unfamiliar shading is a flat colour',
-    unfamiliar.every((span) => span.intensity === 1),
-    `${unfamiliar.length} spans at 1.0`,
+    hardUnfamiliar.every((span) => span.intensity === 1),
+    `${hardUnfamiliar.length} spans at 1.0`,
   );
 
   console.log('\n  edge cases:');
@@ -704,62 +718,74 @@ function main(): void {
     (surprisalTool.requires ?? []).join(', ') || '(nothing declared)',
   );
 
-  console.log(`\n${RULE}\nDale-Chall tool`);
+  console.log(`\n${RULE}\nCommon words tool`);
+
+  // The list is what a typical reader knows, so ordinary prose should come back
+  // clean. The sample is the false-positive control; everything else runs on a
+  // sentence built from words the list genuinely does not carry.
+  const hardText = HARD_TEXT;
+  const sampleRun = commonWordsTool.run({ text: SAMPLE_TEXT, options: {} });
+  const sampleMetrics = computeMetrics(SAMPLE_TEXT);
+  check(
+    'ordinary prose is left alone',
+    (sampleRun.annotations ?? []).length === 0 && sampleMetrics.unfamiliarWords === 0,
+    `${(sampleRun.annotations ?? []).length} flagged, metric says ${sampleMetrics.unfamiliarWords} of ${sampleMetrics.words} words`,
+  );
 
   // The tool exists to explain the topbar's % unfamiliar, so the two counts must
-  // agree exactly in the default configuration.
-  const metricsForText = computeMetrics(SAMPLE_TEXT);
-  const daleChallRun = daleChallTool.run({ text: SAMPLE_TEXT, options: {} });
-  const daleChall = daleChallRun.annotations ?? [];
-  const suggestionsOf = (annotation: (typeof daleChall)[number]): WordSuggestion[] =>
+  // agree exactly.
+  const metricsForText = computeMetrics(hardText);
+  const commonRun = commonWordsTool.run({ text: hardText, options: {} });
+  const uncommon = commonRun.annotations ?? [];
+  const suggestionsOf = (annotation: (typeof uncommon)[number]): WordSuggestion[] =>
     (annotation.data?.suggestions ?? []) as WordSuggestion[];
-  const coveredOf = (annotation: (typeof daleChall)[number]) => SAMPLE_TEXT.slice(annotation.start, annotation.end);
+  const coveredOf = (annotation: (typeof uncommon)[number]) => hardText.slice(annotation.start, annotation.end);
   check(
     'highlights exactly what % unfamiliar counts',
-    daleChall.length === metricsForText.unfamiliarWords,
-    `${daleChall.length} annotations vs metric ${metricsForText.unfamiliarWords}`,
+    uncommon.length === metricsForText.unfamiliarWords && uncommon.length > 0,
+    `${uncommon.length} annotations vs metric ${metricsForText.unfamiliarWords}`,
   );
   check(
     'every highlighted word really is unfamiliar',
-    daleChall.every((annotation) => !isFamiliarWord(coveredOf(annotation))),
-    `${daleChall.length} checked`,
+    uncommon.every((annotation) => !isFamiliarWord(coveredOf(annotation))),
+    `${uncommon.length} checked`,
   );
   check(
     'groups are the suggestion relations plus “no match”',
-    daleChall.every((annotation) =>
+    uncommon.every((annotation) =>
       ['base form', 'shorter form', 'similar meaning', 'close spelling', 'no match'].includes(
         annotation.group ?? '',
       ),
     ),
-    [...new Set(daleChall.map((annotation) => annotation.group))].join(', '),
+    [...new Set(uncommon.map((annotation) => annotation.group))].join(', '),
   );
 
   // The promise of the feature: a suggestion is a word that is on the list.
-  const allSuggestions = daleChall.flatMap(suggestionsOf);
+  const allSuggestions = uncommon.flatMap(suggestionsOf);
   check(
-    'every suggestion is on the Dale-Chall list',
-    allSuggestions.every((suggestion) => DALE_CHALL_WORDS.has(suggestion.word)),
+    'every suggestion is on the common-word list',
+    allSuggestions.every((suggestion) => COMMON_WORDS.has(suggestion.word)),
     `${allSuggestions.length} suggestions offered`,
   );
   check(
     'nothing is suggested for itself',
-    daleChall.every((annotation) =>
+    uncommon.every((annotation) =>
       suggestionsOf(annotation).every((suggestion) => suggestion.word !== coveredOf(annotation).toLowerCase()),
     ),
   );
   check(
     'a suggestion list is never longer than the requested cap',
-    daleChall.every((annotation) => suggestionsOf(annotation).length <= 4),
+    uncommon.every((annotation) => suggestionsOf(annotation).length <= 4),
   );
   // Per annotation, not across the flattened list: families must come first.
   check(
     'family matches outrank spelling matches',
-    daleChall.every((annotation) => {
+    uncommon.every((annotation) => {
       const list = suggestionsOf(annotation);
       const firstSpelling = list.findIndex((suggestion) => suggestion.relation === 'close spelling');
       return firstSpelling === -1 || list.slice(firstSpelling).every((s) => s.relation === 'close spelling');
     }),
-    daleChall.filter((annotation) => suggestionsOf(annotation)[0]?.relation !== 'close spelling' && suggestionsOf(annotation).length > 0).length +
+    uncommon.filter((annotation) => suggestionsOf(annotation)[0]?.relation !== 'close spelling' && suggestionsOf(annotation).length > 0).length +
       ' words led by a family match',
   );
   check(
@@ -796,8 +822,8 @@ function main(): void {
   // A word with no near neighbour must say so rather than invent one.
   check(
     'a word with no listed neighbour suggests nothing',
-    suggestFamiliarWords('enormous').length === 0 && suggestFamiliarWords('nevertheless').length === 0,
-    `enormous: ${suggestFamiliarWords('enormous').length}, nevertheless: ${suggestFamiliarWords('nevertheless').length}`,
+    suggestFamiliarWords('zygote').length === 0 && suggestFamiliarWords('petrichor').length === 0,
+    `zygote: ${suggestFamiliarWords('zygote').length}, petrichor: ${suggestFamiliarWords('petrichor').length}`,
   );
   check(
     'match strength filters the spelling matches',
@@ -812,26 +838,26 @@ function main(): void {
 
   // The options are meant to change the result, and `show` must not change what
   // the stats call unfamiliar — only what is highlighted.
-  const fixableRun = daleChallTool.run({ text: SAMPLE_TEXT, options: { show: 'fixable' } });
+  const fixableRun = commonWordsTool.run({ text: hardText, options: { show: 'fixable' } });
   check(
     '“only words with a match” hides the rest',
     (fixableRun.annotations ?? []).length > 0 &&
-      (fixableRun.annotations ?? []).length < daleChall.length &&
+      (fixableRun.annotations ?? []).length < uncommon.length &&
       (fixableRun.annotations ?? []).every((annotation) => annotation.group !== 'no match'),
-    `${(fixableRun.annotations ?? []).length} of ${daleChall.length} shown`,
+    `${(fixableRun.annotations ?? []).length} of ${uncommon.length} shown`,
   );
   check(
     'the stats still describe the whole document',
-    fixableRun.stats?.find((stat) => stat.id === 'dale-chall.words')?.value === metricsForText.unfamiliarWords,
-    `Unfamiliar words: ${fixableRun.stats?.find((stat) => stat.id === 'dale-chall.words')?.value}`,
+    fixableRun.stats?.find((stat) => stat.id === 'common-words.words')?.value === metricsForText.unfamiliarWords,
+    `Unfamiliar words: ${fixableRun.stats?.find((stat) => stat.id === 'common-words.words')?.value}`,
   );
 
-  const namesRun = daleChallTool.run({ text: SAMPLE_TEXT, options: { ignoreNames: true } });
-  const namesStat = namesRun.stats?.find((stat) => stat.id === 'dale-chall.names');
+  const namesRun = commonWordsTool.run({ text: hardText, options: { ignoreNames: true } });
+  const namesStat = namesRun.stats?.find((stat) => stat.id === 'common-words.names');
   check(
     'the name filter is reported, not silent',
     namesStat !== undefined &&
-      (namesRun.annotations ?? []).length + Number(namesStat.value) === daleChall.length,
+      (namesRun.annotations ?? []).length + Number(namesStat.value) === uncommon.length,
     `${namesStat?.label ?? '(missing)'}: ${namesStat?.value}`,
   );
 
@@ -842,24 +868,24 @@ function main(): void {
   const wordAt = (run: { annotations?: AnnotationDraft[] }, start: number) =>
     run.annotations?.find((annotation) => annotation.start === start) !== undefined;
   const nameStart = nameProbe.indexOf('Zoltan');
-  const keptByDefault = daleChallTool.run({ text: nameProbe, options: {} });
-  const skippedByName = daleChallTool.run({ text: nameProbe, options: { ignoreNames: true } });
-  const openingProbe = daleChallTool.run({ text: 'Zoltan revised everything.', options: { ignoreNames: true } });
+  const keptByDefault = commonWordsTool.run({ text: nameProbe, options: {} });
+  const skippedByName = commonWordsTool.run({ text: nameProbe, options: { ignoreNames: true } });
+  const openingProbe = commonWordsTool.run({ text: 'Zoltan revised everything.', options: { ignoreNames: true } });
   check(
     'the name filter skips a mid-sentence capital only',
     wordAt(keptByDefault, nameStart) &&
       !wordAt(skippedByName, nameStart) &&
       wordAt(openingProbe, 0) &&
-      skippedByName.stats?.find((stat) => stat.id === 'dale-chall.names')?.value === 1,
+      skippedByName.stats?.find((stat) => stat.id === 'common-words.names')?.value === 1,
     `mid-sentence kept=${wordAt(keptByDefault, nameStart)}, skipped=${!wordAt(skippedByName, nameStart)}, sentence-initial kept=${wordAt(openingProbe, 0)}`,
   );
   check(
     'asking for no suggestions still highlights the words',
     (() => {
-      const none = daleChallTool.run({ text: SAMPLE_TEXT, options: { suggestions: 0 } });
+      const none = commonWordsTool.run({ text: hardText, options: { suggestions: 0 } });
       const annotations = none.annotations ?? [];
       return (
-        annotations.length === daleChall.length &&
+        annotations.length === uncommon.length &&
         annotations.every(
           (annotation) => annotation.group === 'no match' && suggestionsOf(annotation).length === 0,
         )
@@ -868,9 +894,9 @@ function main(): void {
     'every word falls into “no match”',
   );
 
-  const sampleSuggestions = daleChall.filter((annotation) => suggestionsOf(annotation).length > 0);
+  const sampleSuggestions = uncommon.filter((annotation) => suggestionsOf(annotation).length > 0);
   console.log(
-    `  sample: ${daleChall.length} flagged, ${sampleSuggestions.length} with a match — ` +
+    `  hard text: ${uncommon.length} flagged, ${sampleSuggestions.length} with a match — ` +
       sampleSuggestions
         .slice(0, 4)
         .map((annotation) => `${coveredOf(annotation)}→${suggestionsOf(annotation)[0]?.word}`)
@@ -882,70 +908,69 @@ function main(): void {
   const fakeSimilarity: SimilaritySignal = {
     model: 'test/bge-stand-in',
     words: {
-      enormous: [
-        { word: 'huge', score: 0.96 },
-        { word: 'large', score: 0.88 },
+      brutalist: [
+        { word: 'cruel', score: 0.8 },
+        { word: 'harsh', score: 0.72 },
         { word: 'notonlist', score: 0.99 },
       ],
-      merely: [{ word: 'just', score: 0.83 }],
-      passage: [{ word: 'journey', score: 0.9 }],
-      patience: [{ word: 'hurry', score: 0.66 }],
+      antediluvian: [{ word: 'ancient', score: 0.9 }],
+      zygote: [{ word: 'cell', score: 0.66 }],
     },
   };
-  const semanticRun = daleChallTool.run({ text: SAMPLE_TEXT, options: {}, signals: { similarity: fakeSimilarity } });
+  const semanticRun = commonWordsTool.run({ text: hardText, options: {}, signals: { similarity: fakeSimilarity } });
   const semanticAnnotations = semanticRun.annotations ?? [];
   const suggestionsForWord = (list: AnnotationDraft[], word: string) => {
-    const annotation = list.find((entry) => SAMPLE_TEXT.slice(entry.start, entry.end).toLowerCase() === word);
+    const annotation = list.find((entry) => hardText.slice(entry.start, entry.end).toLowerCase() === word);
     return ((annotation?.data?.suggestions ?? []) as WordSuggestion[]).map((s) => `${s.word}/${s.relation}`);
   };
   check(
     'the signal becomes “similar meaning” suggestions',
-    suggestionsForWord(semanticAnnotations, 'enormous').includes('huge/similar meaning'),
-    suggestionsForWord(semanticAnnotations, 'enormous').join(', ') || '(none)',
+    suggestionsForWord(semanticAnnotations, 'brutalist').includes('cruel/similar meaning'),
+    suggestionsForWord(semanticAnnotations, 'brutalist').join(', ') || '(none)',
   );
   check(
     'the signal cannot smuggle in a word that is not on the list',
-    !suggestionsForWord(semanticAnnotations, 'enormous').some((entry) => entry.startsWith('notonlist')),
-    suggestionsForWord(semanticAnnotations, 'enormous').join(', '),
+    !suggestionsForWord(semanticAnnotations, 'brutalist').some((entry) => entry.startsWith('notonlist')),
+    suggestionsForWord(semanticAnnotations, 'brutalist').join(', '),
   );
   check(
     'meaning replaces the spelling guess once the model has answered',
-    suggestionsForWord(semanticAnnotations, 'merely').includes('just/similar meaning') &&
-      !suggestionsForWord(semanticAnnotations, 'merely').some((entry) => entry.endsWith('/close spelling')),
-    suggestionsForWord(semanticAnnotations, 'merely').join(', '),
+    suggestionsForWord(semanticAnnotations, 'brutalist').includes('harsh/similar meaning') &&
+      !suggestionsForWord(semanticAnnotations, 'brutalist').some((entry) => entry.endsWith('/close spelling')),
+    suggestionsForWord(semanticAnnotations, 'brutalist').join(', '),
   );
   check(
     'word family still outranks meaning',
-    suggestionsForWord(semanticAnnotations, 'passage')[0] === 'pass/base form',
-    suggestionsForWord(semanticAnnotations, 'passage').join(', '),
+    suggestionsForWord(semanticAnnotations, 'brutalist')[0] === 'brutal/base form',
+    suggestionsForWord(semanticAnnotations, 'brutalist').join(', '),
   );
   check(
     'the panel names the model that answered',
-    semanticRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value === 'bge-stand-in',
-    String(semanticRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value),
+    semanticRun.stats?.find((stat) => stat.id === 'common-words.source')?.value === 'bge-stand-in',
+    String(semanticRun.stats?.find((stat) => stat.id === 'common-words.source')?.value),
   );
   check(
     'match strength filters the meaning matches too',
-    suggestFamiliarWords('patience', {
-      semantic: fakeSimilarity.words.patience,
+    suggestFamiliarWords('zygote', {
+      semantic: fakeSimilarity.words.zygote,
       semanticFloor: 0.62,
-    }).some((suggestion) => suggestion.word === 'hurry') &&
-      !suggestFamiliarWords('patience', {
-        semantic: fakeSimilarity.words.patience,
+    }).some((suggestion) => suggestion.word === 'cell') &&
+      !suggestFamiliarWords('zygote', {
+        semantic: fakeSimilarity.words.zygote,
         semanticFloor: 0.75,
-      }).some((suggestion) => suggestion.word === 'hurry'),
-    'hurry at 0.66: kept at balanced, dropped at strict',
+      }).some((suggestion) => suggestion.word === 'cell'),
+    'cell at 0.66: kept at balanced, dropped at strict',
   );
   check(
     'without the signal the panel says so',
-    daleChallRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value === 'spelling only',
-    String(daleChallRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value),
+    commonRun.stats?.find((stat) => stat.id === 'common-words.source')?.value === 'spelling only',
+    String(commonRun.stats?.find((stat) => stat.id === 'common-words.source')?.value),
   );
   check(
     'the detail sentence groups family, meaning and spelling',
-    /base word/.test(String(semanticAnnotations.find((a) => SAMPLE_TEXT.slice(a.start, a.end).toLowerCase() === 'passage')?.detail)) &&
-      /closer in meaning/.test(String(semanticAnnotations.find((a) => SAMPLE_TEXT.slice(a.start, a.end).toLowerCase() === 'passage')?.detail)),
-    String(semanticAnnotations.find((a) => SAMPLE_TEXT.slice(a.start, a.end).toLowerCase() === 'passage')?.detail),
+    /base word/.test(String(semanticAnnotations.find((a) => hardText.slice(a.start, a.end).toLowerCase() === 'brutalist')?.detail)) &&
+      /closer in meaning/.test(String(semanticAnnotations.find((a) => hardText.slice(a.start, a.end).toLowerCase() === 'brutalist')?.detail)),
+    String(semanticAnnotations.find((a) => hardText.slice(a.start, a.end).toLowerCase() === 'brutalist')?.detail),
   );
 
   console.log(`\n${RULE}\nOverlap & invariants`);

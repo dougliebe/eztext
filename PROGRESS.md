@@ -5,9 +5,9 @@
   registry, live analysis, overlap-aware highlighting, and a tabbed results pane.
 - Topbar shows 11 always-on document metrics; each of the five ratios carries a **percentile chip**
   derived from its z-score against the CLEAR corpus, with a colour-coded font.
-- The **Dale–Chall tool** is in: it flags exactly what `% unfamiliar` counts and, when a flagged word
-  is selected, names the nearest listed words — by meaning while the local model is running, by word
-  family always.
+- The **Common words tool** is in: it flags exactly what `% unfamiliar` counts and, when a flagged word
+  is selected, names the nearest common words — by meaning while the local model is running, by word
+  family always. The list is the ~24,600 words most US readers know, so ordinary prose is usually clean.
 - `main` is **2 commits ahead of `origin/main`** (the Dale–Chall work), not yet pushed.
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
@@ -57,11 +57,12 @@
   Before pushing, the local branch was rebased onto the remote's `c0b44a4`, which the local clone did
   not have (see notes below). Re-verified after the rebase: typecheck, 16/16 smoke, 16/16 render.
 - Topbar metrics (`core/metrics.ts`): the six corpus counts plus Words/sentence, Chars/word,
-  % polysyllabic, % unfamiliar (Dale–Chall) and Syllables/word, in a second visual group behind a
+  % polysyllabic, % unfamiliar (common words) and Syllables/word, in a second visual group behind a
   divider. Metric values carry advisory colour thresholds and hover tooltips with the exact definition.
 - Vendored the Dale–Chall list as data: `core/data/dale-chall.ts`, 2,949 entries, with the formula's
   own familiarity rule (plural, possessive, -ed, -ing, -er/-est, -ly, doubled consonants, hyphenated
-  compounds) implemented as candidate-stem lookup in `isFamiliarWord`.
+  compounds) implemented as candidate-stem lookup in `isFamiliarWord`. **Replaced by the common-word
+  list below** — the stemming rule stayed, because the new source carries inflections unevenly.
 - Smoke test now reports the metric table and asserts the sample document's counts (163 words / 11
   sentences / 4 paragraphs / 1,015 characters — matching the UI), ratio sanity, and 11 familiarity
   cases. `ui-check` guards topbar height (< 15% of viewport) and that the five language metrics render.
@@ -142,9 +143,11 @@
   colour from the heat ramp (`AnnotationDraft.color`). Selecting a shaded word pins an inspector
   at the top of the results pane showing the model's whole distribution at that position (probability
   bars, bits, bits saved) and which of them was the word actually written.
-- **Dale–Chall tool** (`src/tools/dale-chall.tool.ts`): flags every word outside the list — verified
-  equal to the topbar's `% unfamiliar` count on the sample (34 words) — and offers replacements for
-  each, grouped by how it can be fixed (`base form`, `shorter form`, `similar meaning`,
+- **Common words tool** (`src/tools/common-words.tool.ts`, renamed from Dale–Chall when the list
+  changed): flags every word outside the list and offers replacements for each, grouped by how it can
+  be fixed (`base form`, `shorter form`, `similar meaning`, `close spelling`, `no match`, which double
+  as the filter pills). Options: suggestions per word, match strength, highlight only words with a
+  match, and an opt-in filter for capitalised names that do not open a sentence.
   `close spelling`, `no match`, which double as the filter pills). Options: suggestions per word, match
   strength, highlight only words with a match, and an opt-in filter for capitalised names that do not
   open a sentence.
@@ -179,9 +182,11 @@
   word) — the data is already in the tool's annotations as `data.gain`.
 - Surprisal windows arrive all at once; streaming them per window would give progress on long documents.
 
-- Context-aware suggestions: the Dale–Chall neighbours are word-level, so a masked pass over the
+- Context-aware suggestions: the common-word neighbours are word-level, so a masked pass over the
   sentence (“…the patience it demands is [MASK]”) would use the surrounding text as well — one forward
   pass per occurrence, and the model process already knows how to read a distribution at a position.
+  (Tried once with GPT-2's own next-token alternatives and rejected: they are dominated by punctuation
+  and function words, and rare words are split into subword pieces.)
 - Cross-validate our metrics against the corpus's own columns (`Flesch-Reading-Ease`,
   `Flesch-Kincaid-Grade-Level`, `New Dale-Chall Readability Formula`): the xlsx already carries them, so
   the generator could report correlations and expose any weakness in the syllable heuristic.
@@ -200,10 +205,19 @@
 - **Topbar metrics are not a tool**: `core/metrics.ts` is a pure function of the text, called from
   `App.tsx` independently of the tool registry, so the header never changes when tools are toggled.
   Metrics are computed inside the same `useDeferredValue` boundary as the analysis.
-- **Dale–Chall data is vendored, not a dependency**: extracted from the ISC-licensed
-  `text-readability` package (v1.1.1), credited in the file header, so the app keeps zero runtime deps.
-  The list is deliberately narrow (80% fourth-grade familiarity): the bundled sample scores ~21%
-  unfamiliar. That is the formula working as intended — thresholds are <5% easy, >10% hard.
+- **The familiar-word list is vendorable data, not a dependency**: a user-supplied
+  `Word, Prevalence_US` table is reduced to the words above 1.6 and written to
+  `core/data/common-words.ts` (24,607 entries, 229 KB) by `npm run words:common -- <csv>`, so the app
+  keeps zero runtime deps and the list is regenerable without the CSV in the repo.
+- **Prevalence is knowledge, not frequency** — and that is the better bar for this metric. The source
+  scores how widely US readers *recognise* a word, which is why `the` sits below `cat` (asking “do you
+  know this word?” of a function word is odd) and why obscure entries run far below zero. A word above
+  the threshold is one a typical reader knows, which is exactly what the tool should treat as familiar.
+  The cost of the swap: the list is eight times the size of the Dale–Chall one, so ordinary prose now
+  scores ~5% unfamiliar instead of ~18% (CLEAR corpus mean 5.3%, sd 4.0pp after regenerating the
+  norms), and the bundled sample scores **0%** — the sample is ordinary prose, and every word in it is
+  one most readers know. Tests therefore drive the tool with a sentence built from genuine misses
+  (`The antediluvian brutalist edifice obfuscated the zygote.`) rather than the sample.
 - **Chars/word** counts letters and digits only (punctuation/apostrophes excluded), matching what ARI
   and Coleman–Liau use as their divisor. Documented in the metric's tooltip.
 - **Stray remote commit (resolved)**: `origin/main` carried `c0b44a4` — a commit appending
@@ -264,8 +278,17 @@
 - **The `similarity` signal is keyed by word, not by document, and is optional.** A word's embedding
   does not depend on where it appears, so answers accumulate across edits instead of being discarded on
   every keystroke; a model that is not running means no signal, not an error, and the tool falls back to
-  spelling. The tool re-checks every neighbour against the Dale–Chall list before showing it — the
+  spelling. The tool re-checks every neighbour against the common-word list before showing it — the
   signal crosses a process boundary, and “this word is on the list” has to survive bad data.
+- **Meaning suggestions are refused for words the embedding model does not really know.** Measured on
+  the 24,607-word list: words the model has learned tokenize in 1–2 pieces and get sensible neighbours
+  (“ubiquitous” → universally/commonplace 0.77, “esoteric” → occult 0.81), while rare words split into
+  3–5 pieces and come back with *confident* nonsense — “bibliopolic” → bibliographic 0.83,
+  “litotes” → lit 0.76, “zygote” → pokey 0.67. Those scores sit *above* the good answers, so no cosine
+  floor can separate them. The service therefore asks the model's own tokenizer whether it knows the
+  word (more than 2 pieces = refuse, empty list) and lets word family and spelling answer instead: all
+  eighteen rare words probed now return nothing, and the good answers survive. The floor stays 0.55 on
+  the server because the tool's `match` strength decides what to show.
 - **Nothing leaves the machine**: the weights download once (34 MB) and are then loaded from
   `.models/` — verified by loading with remote fetches disabled — and no API is involved. bge-small's
   original weights are MIT (the ONNX conversion repo states no licence), and GPT-2 is MIT, so unlike the

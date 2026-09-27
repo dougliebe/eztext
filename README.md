@@ -162,7 +162,7 @@ src/
   core/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
-    metrics.ts      topbar metrics, z-scores + CDF percentiles, Dale–Chall rules
+    metrics.ts      topbar metrics, z-scores + CDF percentiles, common-word rules
     surprisal.ts    language-model surprisal: logits → per-word bits, perturbation gains
     heatmap.ts      click-a-metric preview shading (document-relative intensity)
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
@@ -325,7 +325,7 @@ and they are the ones with hover tooltips explaining the definition.
 | Words / sentence | `words ÷ sentences` |
 | Chars / word | Letters and digits only — punctuation, spaces and apostrophes excluded. This is the divisor ARI and Coleman–Liau use |
 | % polysyllabic | Share of words with 3+ syllables (estimated from vowel groups) |
-| % unfamiliar | Share of words outside the **Dale–Chall** list of ~3,000 familiar words |
+| % unfamiliar | Share of words outside the **common-word list** — the ~24,600 words most US readers know |
 | Syllables / word | Estimated with the same vowel-group heuristic |
 
 Each of the five ratios carries a small **percentile chip**, computed from its z-score against the CORPUS
@@ -364,7 +364,7 @@ contributes to that value; clicking the same one again clears it, and only one c
 | Words / sentence | whole sentences | hotter = more words |
 | Chars / word | every word | hotter = more letters |
 | % polysyllabic | only words of 3+ syllables | hotter = more syllables |
-| % unfamiliar | only words off the Dale–Chall list | one flat colour, no ramp |
+| % unfamiliar | only words off the common-word list | one flat colour, no ramp |
 | Syllables / word | every word | hotter = more syllables |
 
 Every shade carries a tooltip with the measurement and how it compares within this document
@@ -445,14 +445,25 @@ ratios are recorded.
 aggregate statistics are committed here, never the corpus text, and the generated file carries the
 attribution. If eztext is ever used commercially, these norms need a licence review or a corpus swap.
 
-### About the Dale–Chall list
+### About the common-word list
 
-`src/core/data/dale-chall.ts` vendors the list as data (2,949 entries) so the app keeps zero runtime
-dependencies. The list comes from Dale & Chall's 1948 paper *A Formula for Predicting Readability*, as
-reproduced by the ISC-licensed [`text-readability`](https://www.npmjs.com/package/text-readability)
-package (v1.1.1). Familiarity follows the formula's own rule: a word counts as familiar if it is listed
-**or** is a simple variant of a listed word — plural, possessive, `-ed`, `-ing`, `-er`/`-est`, `-ly`,
-doubled consonants, or a hyphenated compound whose parts are all listed.
+`src/core/data/common-words.ts` vendors the vocabulary as data (24,607 entries) so the app keeps zero
+runtime dependencies, and `npm run words:common -- <prevalence.csv>` regenerates it from a
+`Word, Prevalence_US` table, keeping every word above 1.6.
+
+That column is **knowledge prevalence, not text frequency**: it is how widely US readers recognise a
+word, which is why `the` scores below `cat` (asking "do you know this word?" of a function word is
+odd) and why obscure entries sit far below zero. Words above the threshold are the ones a typical
+reader knows, which is the honest bar for calling a word familiar. The source carries inflections
+unevenly — `word` but not `words`, `walk` but not `walked` — so a word also counts as familiar when it
+is a simple variant of a listed one: plural, possessive, `-ed`, `-ing`, `-er`/`-est`, `-ly`, doubled
+consonants, or a hyphenated compound whose parts are all listed.
+
+Consequence worth knowing: this list is eight times the size of the Dale–Chall one it replaced, so
+ordinary prose now scores ~5% unfamiliar (the CLEAR corpus mean) instead of ~18%, and the
+**Dale–Chall tool was renamed Common words** accordingly. A document has to contain genuinely rare
+words before anything is flagged — `enormous`, `merely` and `nevertheless` are all words most readers
+know.
 
 The list is deliberately narrow (words known to 80% of fourth-graders), so ordinary adult prose scores
 high: the bundled sample text lands at ~21% unfamiliar. That is the formula working as intended, not a bug.

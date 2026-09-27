@@ -166,7 +166,7 @@ interface SuggestionRow {
 }
 
 /**
- * Alternatives a tool attaches to an annotation — Dale–Chall's nearest listed
+ * Alternatives a tool attaches to an annotation — the Common words tool's nearest
  * words, for instance.
  *
  * Deliberately tolerant about the payload: a tool may send plain strings or

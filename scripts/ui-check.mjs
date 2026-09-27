@@ -36,6 +36,13 @@ const check = (label, ok, detail = '') => {
 const near = (a, b, tolerance = 0.008) => Math.abs(a - b) <= tolerance;
 const pct = (value) => `${(value * 100).toFixed(1)}%`;
 
+/**
+ * Words the common-word list does not carry (a knowledge prevalence, so these
+ * are the ones a reader may not know). Ordinary prose has none of them, which is
+ * why the unfamiliar-word checks need a document of their own.
+ */
+const HARD_TEXT = 'The antediluvian brutalist edifice obfuscated the zygote.';
+
 const reachable = await fetch(baseUrl)
   .then((response) => response.ok)
   .catch(() => false);
@@ -362,7 +369,19 @@ await metricButton('% unfamiliar').click();
 await page.waitForTimeout(150);
 heat = await heatState();
 check('% unfamiliar shades only unfamiliar words in one colour',
-  heat.heatSpans === 34 && heat.heatColours === 1, `${heat.heatSpans} words, ${heat.heatColours} colour(s)`);
+  heat.heatSpans === 0 && heat.heatColours === 0, `${heat.heatSpans} words on ordinary prose`);
+
+// The list is what a typical reader knows, so ordinary prose has nothing to
+// shade. Drive the same view with words the list really does not carry.
+const SAMPLE = await page.inputValue('.input__area');
+await page.fill('.input__area', HARD_TEXT);
+await page.waitForTimeout(300);
+heat = await heatState();
+check('% unfamiliar shades rare words in one colour',
+  heat.heatSpans === 5 && heat.heatColours === 1, `${heat.heatSpans} words, ${heat.heatColours} colour(s)`);
+await page.fill('.input__area', SAMPLE);
+await page.waitForTimeout(300);
+heat = await heatState();
 check('a binary metric hides the ramp', heat.ramp === false);
 
 await metricButton('% polysyllabic').click();
@@ -638,30 +657,31 @@ if (!health?.ready) {
   check('the card can be dismissed', (await page.locator('.selection').count()) === 0);
 }
 
-// --- 9. Dale-Chall suggestions -------------------------------------------
+// --- 9. Common words: suggestions -----------------------------------------
 // A controlled document: block 8 rewrites the textarea when the model is
 // running, so nothing here may depend on what came before.
-await page.fill('.input__area', 'The writers were reshaping the passage.');
+await page.fill('.input__area', HARD_TEXT);
 await page.waitForTimeout(300);
-await page.locator('.chip__main', { hasText: 'Dale' }).first().click();
+await page.locator('.chip__main', { hasText: 'Common' }).first().click();
 await page.waitForTimeout(250);
 
 const flaggedWords = await page.evaluate(() =>
-  [...document.querySelectorAll('.hl[data-tool="dale-chall"]')].map((node) => node.textContent),
+  [...document.querySelectorAll('.hl[data-tool="common-words"]')].map((node) => node.textContent),
 );
 check(
-  'Dale-Chall flags the unfamiliar words',
-  ['writers', 'reshaping', 'passage'].every((word) => flaggedWords.includes(word)),
+  'Common words flags what the list does not carry',
+  ['antediluvian', 'brutalist', 'edifice', 'obfuscated', 'zygote'].every((word) => flaggedWords.includes(word)),
   flaggedWords.join(' '),
 );
 
-// Word-family and meaning suggestions both land in the tooltip as detail text.
-const withDetail = page.locator('.hl[data-tool="dale-chall"][title*="is not on the"]');
+// Family and meaning suggestions both land in the tooltip as detail text.
+const withDetail = page.locator('.hl[data-tool="common-words"][title*="is not a common word"]');
 check('flagged words carry their detail in the tooltip', (await withDetail.count()) > 0);
 
-// "passage" is in the controlled sentence and is one of the words the tool has
-// an answer for; the word span is the deepest element, so this clicks the word.
-await page.locator('.hl[data-tool="dale-chall"]').filter({ hasText: 'passage' }).first().click();
+// "brutalist" is the word the tool has the most to say about: its own base word
+// plus meaning neighbours. The word span is the deepest element, so this clicks
+// the word rather than the sentence behind it.
+await page.locator('.hl[data-tool="common-words"]').filter({ hasText: 'brutalist' }).first().click();
 await page.waitForTimeout(250);
 
 const inspector = await page.evaluate(() => {
@@ -676,7 +696,7 @@ const inspector = await page.evaluate(() => {
 });
 check(
   'clicking a flagged word opens the inspector',
-  inspector !== null && (inspector.eyebrow ?? '').includes('Dale'),
+  inspector !== null && (inspector.eyebrow ?? '').includes('Common'),
   `${inspector?.eyebrow} — “${inspector?.word}”`,
 );
 check('the inspector lists the nearest listed words', (inspector?.suggestions.length ?? 0) > 0, inspector?.suggestions.join(', '));

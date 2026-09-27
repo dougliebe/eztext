@@ -59,7 +59,7 @@ export const HEAT_METRICS: Record<HeatMetricId, HeatMetricInfo> = {
     id: 'unfamiliarShare',
     label: '% unfamiliar',
     unit: 'word',
-    legend: 'Shades only words outside the Dale–Chall list of familiar words.',
+    legend: 'Shades only words outside the common-word list.',
     binary: true,
   },
   syllablesPerWord: {
@@ -182,7 +182,7 @@ export function buildHeatmap(text: string, metric: HeatMetricId): HeatSpan[] {
     return tokens
       .filter((token) => !isFamiliarWord(token.lower))
       .map((token) =>
-        span(token, 1, 1, 'unfamiliar', `“${token.text}” is not on the Dale–Chall list of familiar words.`),
+        span(token, 1, 1, 'unfamiliar', `“${token.text}” is not a word most readers know.`),
       );
   }
 

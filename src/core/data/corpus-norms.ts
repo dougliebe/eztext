@@ -58,7 +58,7 @@ export const CLEAR_CORPUS: CorpusNorms = {
     wordsPerSentence: { mean: 21.2829, sd: 9.233 },
     charactersPerWord: { mean: 4.4419, sd: 0.4345 },
     polysyllabicShare: { mean: 0.0958, sd: 0.06 },
-    unfamiliarShare: { mean: 0.1757, sd: 0.099 },
+    unfamiliarShare: { mean: 0.0528, sd: 0.0397 },
     syllablesPerWord: { mean: 1.4147, sd: 0.1649 },
   },
 };

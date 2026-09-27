@@ -10,7 +10,7 @@
  * keystroke alongside the analysis pipeline.
  */
 import { mixHex } from './color';
-import { DALE_CHALL_WORDS } from './data/dale-chall';
+import { COMMON_WORDS } from './data/common-words';
 import type { MetricNorm } from './data/corpus-norms';
 import { countSyllables, splitParagraphs, splitSentences, tokenizeWords } from './text';
 
@@ -155,7 +155,7 @@ export interface DocumentMetrics {
   /** Estimated with the vowel-group heuristic in `core/text.ts`. */
   syllables: number;
   polysyllables: number;
-  /** Words that are not on the Dale–Chall list, or a variant of one. */
+  /** Words that are not on the common-word list, or a variant of one. */
   unfamiliarWords: number;
   readingMinutes: number;
 
@@ -170,18 +170,20 @@ export interface DocumentMetrics {
 }
 
 /**
- * Is the word one a fourth-grader would recognise?
+ * Is this a word the reader is likely to know?
  *
- * Dale & Chall count a word as familiar when it is on their list **or** is a
- * simple variant of a listed word: plural, possessive, past tense, present
- * participle, comparative/superlative, or adverb. This is expressed as
- * candidate stem generation — for every suffix that could have been added, the
- * resulting stem is looked up.
+ * True when the word is on the common-word list (a knowledge prevalence, see
+ * `data/common-words.ts`) **or** is a simple variant of a listed word: plural,
+ * possessive, past tense, present participle, comparative/superlative or adverb.
+ * The list carries inflections unevenly — "word" but not "words", "walk" but
+ * not "walked" — so the variants matter: without them every unlisted plural
+ * would read as an unfamiliar word. Expressed as candidate stem generation: for
+ * every suffix that could have been added, the resulting stem is looked up.
  */
 export function isFamiliarWord(rawWord: string): boolean {
   const word = rawWord.toLowerCase();
   if (!word) return true;
-  if (DALE_CHALL_WORDS.has(word)) return true;
+  if (COMMON_WORDS.has(word)) return true;
 
   // Hyphenated compounds are familiar when every part is ("afternoon-tea").
   if (word.includes('-')) {
@@ -225,7 +227,7 @@ export function isFamiliarWord(rawWord: string): boolean {
   const doubled = /^(.*?)([bcdfghjklmnpqrstvwxz])\2(?:ed|ing|er|est)$/.exec(word);
   if (doubled) push(doubled[1] + doubled[2]);
 
-  return stems.some((stem) => DALE_CHALL_WORDS.has(stem));
+  return stems.some((stem) => COMMON_WORDS.has(stem));
 }
 
 export function computeMetrics(text: string): DocumentMetrics {

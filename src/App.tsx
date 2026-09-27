@@ -299,7 +299,7 @@ export default function App() {
           <Metric
             label="% unfamiliar"
             value={`${round(doc.unfamiliarShare * 100, 1)}%`}
-            hint={`Share of words outside the Dale–Chall list of ~3,000 familiar words, and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words).`}
+            hint={`Share of words outside the ~24,600 words most US readers know, and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words).`}
             percent
             deviation={deviation(doc.unfamiliarShare, CLEAR_CORPUS.metrics.unfamiliarShare)}
             heatLabel="mark unfamiliar words"

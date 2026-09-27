@@ -15,8 +15,8 @@
  * the process and the app share one implementation.
  *
  * The same process also answers "what familiar word means most nearly this one?"
- * for the Dale-Chall tool (`POST /similarity`), lazily loading
- * `Xenova/bge-small-en-v1.5` (~34 MB) and a cached vector per Dale-Chall word on
+ * for the Common words tool (`POST /similarity`), lazily loading
+ * `Xenova/bge-small-en-v1.5` (~34 MB) and a cached vector per common word on
  * first use. See `scripts/word-embeddings.mjs`.
  */
 import { execFileSync } from 'node:child_process';
@@ -232,7 +232,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  // Nearest Dale-Chall words by meaning, for every unfamiliar word in the text.
+  // Nearest common words by meaning, for every uncommon word in the text.
   if (url.pathname === '/similarity' && request.method === 'POST') {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);

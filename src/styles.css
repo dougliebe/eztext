@@ -1420,7 +1420,9 @@ button {
 .selection {
   position: sticky;
   top: 0;
-  z-index: 2;
+  /* Above the row list's own sticky column head (z-index 2): they overlap when
+     the list is scrolled, and the inspector must win. */
+  z-index: 3;
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
   padding: 8px 12px 10px;

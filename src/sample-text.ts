@@ -2,7 +2,7 @@
  * Starter document.
  *
  * Deliberately mixed — short and long sentences, a mix of one- to six-syllable
- * words, and a good number of Dale–Chall-unfamiliar ones — so the topbar
+ * words, and a good number of uncommon ones — so the topbar
  * metrics, the percentile chips and the heatmaps all have something to show.
  * Its counts are asserted in `dev/smoke.ts`, so editing this text means
  * updating those expectations.

@@ -28,7 +28,7 @@ const checks: Array<[string, boolean]> = [
       html.includes(label),
     ),
   ],
-  ['metric tooltips render', html.includes('Dale–Chall list of ~3,000 familiar words')],
+  ['metric tooltips render', html.includes('words most US readers know')],
   [
     'every heat metric is a clickable toggle',
     (() => {
