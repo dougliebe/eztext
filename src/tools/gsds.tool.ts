@@ -1,6 +1,7 @@
 import {
   analyseGsds,
   GSDS_VARIABLES,
+  type GsdsFeature,
   type GsdsFeatureKind,
   type GsdsUnitBreakdown,
   type GsdsVariableId,
@@ -29,6 +30,38 @@ const VARIABLE_BY_GROUP: Record<GsdsFeatureKind, GsdsVariableId> = {
   'time-adverb': 'timeAdverbs',
   verbal: 'verbals',
 };
+
+/**
+ * One hue per counted feature, so the words inside a dense unit can be told
+ * apart at a glance. The dense region itself stays the tool's teal; these only
+ * colour the token highlights. Each is dark enough that a 50% wash over paper
+ * still clears WCAG AA under the preview ink (asserted in smoke).
+ */
+const GROUP_COLORS: Record<GsdsFeatureKind, string> = {
+  modal: '#2563eb',
+  'be-have': '#7c3aed',
+  preposition: '#d97706',
+  possessive: '#db2777',
+  'time-adverb': '#059669',
+  verbal: '#0891b2',
+};
+
+/** Strong enough to read over the region's wash; opaque tint, no underline. */
+const FEATURE_ALPHA = 0.5;
+
+function featureAnnotation(feature: GsdsFeature): AnnotationDraft {
+  const variable = VARIABLE_BY_GROUP[feature.kind];
+  return {
+    start: feature.start,
+    end: feature.end,
+    label: feature.label,
+    group: GROUPS[feature.kind],
+    detail: feature.detail,
+    color: GROUP_COLORS[feature.kind],
+    alpha: FEATURE_ALPHA,
+    data: { variable, weight: WEIGHT[variable] },
+  };
+}
 
 /** Short labels for the per-unit score decomposition shown in the inspector. */
 const SHARE_LABELS: Record<GsdsVariableId, string> = {
@@ -73,15 +106,30 @@ function countFor(variable: GsdsVariableId, unit: GsdsUnitBreakdown): number {
 interface Contributor {
   label: string;
   value: number;
+  /** The matched words themselves, so the inspector can name them. */
+  words: string[];
 }
 
+/** Which feature kind feeds which variable, for naming the counted words. */
+const KIND_BY_VARIABLE: Partial<Record<GsdsVariableId, GsdsFeatureKind>> = {
+  modals: 'modal',
+  beHave: 'be-have',
+  prepositions: 'preposition',
+  possessives: 'possessive',
+  timeAdverbs: 'time-adverb',
+  verbals: 'verbal',
+};
+
 /** The weighted shares of one T-unit, biggest first, labelled with their counts. */
-function contributors(unit: GsdsUnitBreakdown): Contributor[] {
+function contributors(unit: GsdsUnitBreakdown, features: GsdsFeature[]): Contributor[] {
   return GSDS_VARIABLES.map((variable) => {
     const count = countFor(variable.id, unit);
+    const kind = KIND_BY_VARIABLE[variable.id];
+    const words = kind ? features.filter((feature) => feature.kind === kind).map((feature) => feature.label) : [];
     return {
       label: count > 0 ? `${count} ${SHARE_LABELS[variable.id]}` : SHARE_LABELS[variable.id],
       value: unit.shares[variable.id],
+      words: words.length > 6 ? [...words.slice(0, 6), '…'] : words,
     };
   })
     .filter((entry) => entry.value > 0)
@@ -212,6 +260,13 @@ export const gsdsTool: Tool = {
       hint: 'Share of T-units to shade, ranked by how much of the weighted total they own.',
     },
     {
+      kind: 'boolean',
+      id: 'showFeatures',
+      label: 'Show counted words inside dense units',
+      default: true,
+      hint: 'Colour-coded highlights for the modals, prepositions, verbals and so on inside each shaded T-unit. Turn off to see the regions alone.',
+    },
+    {
       kind: 'select',
       id: 'beHave',
       label: 'Be / have',
@@ -227,6 +282,7 @@ export const gsdsTool: Tool = {
   run({ text, options }) {
     const mode = String(options.beHave ?? 'auxiliary') === 'all' ? 'all' : 'auxiliary';
     const view = String(options.view ?? 'dense') === 'audit' ? 'audit' : 'dense';
+    const showFeatures = options.showFeatures !== false;
     const topShare = Math.min(100, Math.max(5, Number(options.top ?? 25)));
     const analysis = analyseGsds(text, { beHave: mode });
     const frequencies = analysis.frequencies;
@@ -237,15 +293,7 @@ export const gsdsTool: Tool = {
 
     if (view === 'audit') {
       for (const feature of analysis.features) {
-        const variable = VARIABLE_BY_GROUP[feature.kind];
-        annotations.push({
-          start: feature.start,
-          end: feature.end,
-          label: feature.label,
-          group: GROUPS[feature.kind],
-          detail: feature.detail,
-          data: { variable, weight: WEIGHT[variable] },
-        });
+        annotations.push(featureAnnotation(feature));
       }
 
       analysis.clauseRanges.forEach((clause, index) => {
@@ -266,6 +314,37 @@ export const gsdsTool: Tool = {
       const dense = ranked.slice(0, count);
       const maximum = dense[0].total;
       const minimum = dense[dense.length - 1].total;
+
+      // Features grouped by the T-unit that owns them, for both the highlights
+      // and the named contributors in the inspector.
+      const featuresByUnit = new Map<number, GsdsFeature[]>();
+      {
+        let pointer = 0;
+        for (const feature of analysis.features) {
+          while (
+            pointer < analysis.units.length - 1 &&
+            feature.start >= analysis.units[pointer].end
+          ) {
+            pointer += 1;
+          }
+          const owner = analysis.units[pointer];
+          if (!owner) continue;
+          featuresByUnit.set(owner.ordinal, [...(featuresByUnit.get(owner.ordinal) ?? []), feature]);
+        }
+      }
+
+      // The counted words inside the shaded regions: this is what makes the
+      // region score what it does, located in the text rather than only counted
+      // in the inspector. Collected after the unit annotations below so the
+      // regions stay the primary rows in the results panel.
+      const insideFeatures: AnnotationDraft[] = [];
+      if (showFeatures) {
+        for (const unit of dense) {
+          for (const feature of featuresByUnit.get(unit.ordinal) ?? []) {
+            insideFeatures.push(featureAnnotation(feature));
+          }
+        }
+      }
 
       for (const unit of dense) {
         const intensity = maximum > minimum ? (unit.total - minimum) / (maximum - minimum) : 1;
@@ -288,10 +367,12 @@ export const gsdsTool: Tool = {
             clauses: unit.clauses,
             total: unit.total,
             ratioToAverage: ratio,
-            contributors: contributors(unit),
+            contributors: contributors(unit, featuresByUnit.get(unit.ordinal) ?? []),
           },
         });
       }
+
+      annotations.push(...insideFeatures);
     }
 
     const contribution = (variable: GsdsVariableId) =>

@@ -1763,6 +1763,12 @@ button {
   border-bottom: 1px dotted var(--dash);
 }
 
+.selection__contributor-words {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
 .selection__contributor-value {
   color: var(--muted);
   font-variant-numeric: tabular-nums;

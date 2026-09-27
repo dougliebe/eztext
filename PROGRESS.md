@@ -140,8 +140,12 @@
   exact share of the weighted total — `core/gsds.ts` computes a per-unit decomposition whose shares sum
   back to the published contributions, which smoke verifies to 1e-9 — shades the top quarter with a
   graded alpha, and the inspector lists the contributors (`30 words = 1.78`, `2 time adverbs = 1.20`, …)
-  under the canonical fix. The audit view keeps every counted feature for hand-checking the tally. The
-  three highlight checkboxes are gone; the options are view / top% / be-have.
+  under the canonical fix. The counted words inside each shaded unit are highlighted with one hue per
+  feature group (six hues, smoke asserts they are distinct and each AA-legible over the region's wash),
+  so the sentence shows its time adverbs, modals and so on instead of only counting them; the inspector
+  names them too (`2 time adverbs — while, before`). The audit view keeps every counted feature for
+  hand-checking the tally. The three highlight checkboxes are gone; the options are view / top% /
+  show-words / be-have.
 - **Every tool explains its groups** (`ToolResult.summary` + `groupDescriptions` + `groupExamples`):
   the results panel renders one general line above the stats and a per-group “what this means / what to
   do / one canonical fix” list under the filter pills, and the selection inspector shows the fix

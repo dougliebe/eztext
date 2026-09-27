@@ -30,13 +30,17 @@ export function SelectionCard({ selection, scores, text, example, onClose }: Sel
   const bits = typeof selection.data?.bits === 'number' ? selection.data.bits : null;
 
   // Optional per-annotation breakdown (GSDS dense units): the weighted shares
-  // that make this range dense, biggest first.
+  // that make this range dense, biggest first, with the words that earned them.
   const contributors = Array.isArray(selection.data?.contributors)
-    ? (selection.data.contributors as Array<{ label?: unknown; value?: unknown }>).flatMap((entry) =>
-        entry && typeof entry.label === 'string' && typeof entry.value === 'number'
-          ? [{ label: entry.label, value: entry.value }]
-          : [],
-      )
+    ? (
+        selection.data.contributors as Array<{ label?: unknown; value?: unknown; words?: unknown }>
+      ).flatMap((entry) => {
+        if (!entry || typeof entry.label !== 'string' || typeof entry.value !== 'number') return [];
+        const words = Array.isArray(entry.words)
+          ? entry.words.filter((word): word is string => typeof word === 'string')
+          : [];
+        return [{ label: entry.label, value: entry.value, words }];
+      })
     : [];
 
   return (
@@ -76,7 +80,12 @@ export function SelectionCard({ selection, scores, text, example, onClose }: Sel
           <ul className="selection__contributor-list">
             {contributors.map((entry) => (
               <li key={entry.label}>
-                <span>{entry.label}</span>
+                <span>
+                  {entry.label}
+                  {entry.words.length > 0 && (
+                    <span className="selection__contributor-words"> — {entry.words.join(', ')}</span>
+                  )}
+                </span>
                 <span className="selection__contributor-value">{entry.value.toFixed(2)}</span>
               </li>
             ))}

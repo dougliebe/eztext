@@ -155,7 +155,7 @@ list, coverage tracks, JSON export, hover/click syncing with the preview, and in
 | --- | --- | --- |
 | **Readability** | Long sentences and complex words overlapping, so it exercises the layering | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word, complex-word share |
 | **Surprisal** | Every word shaded transparent → red by how many bits the language model needed to predict it | mean bits/token, perplexity, hardest words, top-decile count, model name |
-| **Syntactic density** | The densest T-units shaded, with a click-through breakdown of the weighted shares behind each one (audit view highlights every counted feature) | SDS, grade equivalent, weighted total, densest T-unit, and every frequency with its weight and contribution |
+| **Syntactic density** | The densest T-units shaded, with the counted words inside them colour-coded by kind and a click-through breakdown of each unit's weighted shares (audit view highlights every counted feature) | SDS, grade equivalent, weighted total, densest T-unit, and every frequency with its weight and contribution |
 
 Earlier revisions shipped Sentences, Verbs and Repeated-words tools as worked examples of the contract.
 They were removed because they were demonstrations rather than things worth reading with — the recipe
@@ -461,10 +461,12 @@ is auditable rather than oracular.
 The default **dense view** answers the question a density score naturally raises: *where* is the prose
 packed hardest, and why. `core/gsds.ts` attributes every part of the weighted total to the T-unit that
 owns it (`units`), so each T-unit has an exact share; the tool shades the top quarter, darkest first,
-and clicking one lists its contributors — `30 words = 1.78`, `2 time adverbs = 1.20`,
+and clicking one lists its contributors — `30 words = 1.78`, `2 time adverbs — while, before = 1.20`,
 `23 subordinate-clause words = 0.88` … — which sum back to that unit's share of the published total.
-The **audit view** flips to highlighting every counted feature, so the frequencies can be checked by
-hand against the rules above.
+The counted words inside those regions are highlighted too, one hue per feature group, so the number
+in the inspector can be found in the sentence; nothing outside the dense regions is highlighted. The
+**audit view** flips to highlighting every counted feature, so the frequencies can be checked by hand
+against the rules above.
 
 Two properties of the instrument are surfaced instead of hidden:
 

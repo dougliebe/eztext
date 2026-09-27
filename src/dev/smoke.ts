@@ -398,28 +398,95 @@ function main(): void {
   // hand the inspector the exact decomposition behind each shade.
   const denseRun = gsdsTool.run({ text: SAMPLE_TEXT, options: {} });
   const denseAnnotations = denseRun.annotations ?? [];
+  const denseUnits = denseAnnotations.filter((annotation) => annotation.group === 'dense');
+  const denseWords = denseAnnotations.filter((annotation) => annotation.group !== 'dense');
   const expectedDense = Math.max(1, Math.round((gsds.units.length * 25) / 100));
   const dataOf = (annotation: { data?: Record<string, unknown> }) => annotation.data ?? {};
   check(
-    'the dense view shades the top quarter of T-units only',
-    denseAnnotations.length === expectedDense &&
-      denseAnnotations.every((annotation) => annotation.group === 'dense'),
-    `${denseAnnotations.length} of ${gsds.units.length} T-units`,
+    'the dense view shades the top quarter of T-units',
+    denseUnits.length === expectedDense,
+    `${denseUnits.length} of ${gsds.units.length} T-units`,
   );
   check(
-    'dense annotations carry the contributor breakdown',
-    denseAnnotations.every((annotation) => {
+    'dense regions carry the contributor breakdown',
+    denseUnits.every((annotation) => {
       const list = dataOf(annotation).contributors;
       return Array.isArray(list) && list.length > 0;
     }),
   );
   check(
     'dense shading is graded and stays subtle',
-    denseAnnotations.every(
+    denseUnits.every(
       (annotation) =>
         typeof annotation.alpha === 'number' && annotation.alpha >= 0.1 && annotation.alpha <= 0.4,
-    ) && new Set(denseAnnotations.map((annotation) => annotation.alpha)).size > 1,
-    denseAnnotations.map((annotation) => annotation.alpha?.toFixed(2)).join(', '),
+    ) && new Set(denseUnits.map((annotation) => annotation.alpha)).size > 1,
+    denseUnits.map((annotation) => annotation.alpha?.toFixed(2)).join(', '),
+  );
+
+  // The words inside the shaded units are located in the text, not just counted:
+  // that is what lets a reader find the two time adverbs the inspector named.
+  check(
+    'the counted words inside dense units are highlighted',
+    denseWords.length > 0 &&
+      denseWords.every((annotation) =>
+        denseUnits.some((unit) => annotation.start >= unit.start && annotation.end <= unit.end),
+      ),
+    `${denseWords.length} words across ${denseUnits.length} units`,
+  );
+  check(
+    'the sample exposes time adverbs inside a dense unit',
+    denseWords.some((annotation) => annotation.group === 'time-adverb'),
+    [...new Set(denseWords.map((annotation) => annotation.group))].join(', '),
+  );
+  check(
+    'the inspector breakdown names the words behind a share',
+    (() => {
+      const entries = dataOf(denseUnits[0]).contributors as
+        | Array<{ label: string; words?: string[] }>
+        | undefined;
+      const entry = entries?.find((candidate) => candidate.label.includes('time adverb'));
+      return Array.isArray(entry?.words) && entry.words.length > 0;
+    })(),
+    (() => {
+      const entries = dataOf(denseUnits[0]).contributors as
+        | Array<{ label: string; words?: string[] }>
+        | undefined;
+      const entry = entries?.find((candidate) => candidate.label.includes('time adverb'));
+      return entry ? `${entry.label} — ${entry.words?.join(', ')}` : 'no time-adverb share';
+    })(),
+  );
+
+  const groupColors = new Map<string, string>();
+  const consistentColors = denseWords.every((annotation) => {
+    if (!annotation.color || !annotation.group) return false;
+    const seen = groupColors.get(annotation.group);
+    if (seen === undefined) {
+      groupColors.set(annotation.group, annotation.color);
+      return true;
+    }
+    return seen === annotation.color;
+  });
+  check(
+    'each feature group has one colour',
+    consistentColors && new Set(groupColors.values()).size === groupColors.size,
+    [...groupColors.entries()].map(([group, color]) => `${group}=${color}`).join(' '),
+  );
+
+  // A feature sits on top of the region's wash, so the conservative check is the
+  // feature colour over the strongest dense tint, not over bare paper.
+  const strongestWash = mixHex('#ffffff', gsdsTool.color, 0.4);
+  const worstContrast = Math.min(
+    ...denseWords.map((annotation) =>
+      contrastRatio(
+        mixHex(strongestWash, annotation.color ?? '#000000', annotation.alpha ?? 0),
+        '#1b1b1b',
+      ),
+    ),
+  );
+  check(
+    'feature highlights stay legible under the preview ink',
+    worstContrast >= 4.5,
+    `worst ${worstContrast.toFixed(2)}:1 (WCAG AA needs 4.5:1)`,
   );
 
   console.log(`\n${RULE}\nCorpus comparison — ${CLEAR_CORPUS.name}, n=${CLEAR_CORPUS.n}`);
