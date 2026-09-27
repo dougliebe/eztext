@@ -298,7 +298,7 @@ function readSuggestions(data: Record<string, unknown> | undefined): SuggestionR
 function Suggestions({ items }: { items: SuggestionRow[] }) {
   return (
     <div className="inspector__body">
-      <table className="alts">
+      <table className="alts alts--compact">
         <thead>
           <tr>
             <th scope="col">#</th>

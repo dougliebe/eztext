@@ -1614,6 +1614,20 @@ button {
   color: var(--text);
 }
 
+/*
+ * Suggestions are a short list of words, not a spread of columns: sized to its
+ * content so the word stays beside its relation instead of being pushed away by
+ * the table filling the card. (The alternatives table above genuinely needs the
+ * width — its probability bars are proportional to it.)
+ */
+.alts--compact {
+  /* A stretched flex item ignores `width: auto`, and the inspector body is a
+     column flex container — so it has to opt out of the stretch explicitly. */
+  align-self: flex-start;
+  width: auto;
+  max-width: 100%;
+}
+
 .alts__row--written {
   background: var(--accent-soft);
 }
