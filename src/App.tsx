@@ -211,21 +211,34 @@ export default function App() {
     });
   }, []);
 
-  const selectFromList = useCallback(
-    (annotation: ResolvedAnnotation) => {
-      setSelectedId(annotation.id);
+  /**
+   * Selecting is a toggle: clicking whatever is already selected clears it, so a
+   * second click on the same word is the way out of the inspector.
+   *
+   * `reveal` is for selections that come from outside the preview (the coverage
+   * strip), which scroll the preview to the range they just picked.
+   */
+  const select = useCallback(
+    (annotation: ResolvedAnnotation, options: { reveal?: boolean } = {}) => {
+      const isSame = selectedId === annotation.id;
+      setSelectedId(isSame ? null : annotation.id);
       setHoverId(null);
+      if (isSame) return;
       setTab('results');
-      revealInPreview(annotation);
+      if (options.reveal) revealInPreview(annotation);
     },
-    [revealInPreview],
+    [selectedId, revealInPreview],
   );
 
-  const selectFromPreview = useCallback((annotation: ResolvedAnnotation) => {
-    setSelectedId(annotation.id);
-    setHoverId(null);
-    setTab('results');
-  }, []);
+  const selectFromList = useCallback(
+    (annotation: ResolvedAnnotation) => select(annotation, { reveal: true }),
+    [select],
+  );
+
+  const selectFromPreview = useCallback(
+    (annotation: ResolvedAnnotation) => select(annotation),
+    [select],
+  );
 
   const selectedAnnotation = useMemo(
     () => analysis.annotations.find((annotation) => annotation.id === selectedId) ?? null,
@@ -413,10 +426,6 @@ export default function App() {
             analysis={analysis}
             tab={tab}
             onTabChange={setTab}
-            hoverId={hoverId}
-            selectedId={selectedId}
-            onHover={setHoverId}
-            onSelect={selectFromList}
             selection={
               <SelectionCard
                 selection={selectedAnnotation}
@@ -437,7 +446,7 @@ export default function App() {
         <span>
           {selectedAnnotation
             ? `Selected: ${selectedAnnotation.toolName} — “${selectedAnnotation.label}” [${selectedAnnotation.start}–${selectedAnnotation.end}]`
-            : 'Click a highlight or a result row to inspect it'}
+            : 'Click a highlight to inspect it — click it again to deselect'}
         </span>
         <span className="statusbar__spacer" />
         <span>runs on every keystroke · {round(analysis.elapsedMs, 2)} ms</span>

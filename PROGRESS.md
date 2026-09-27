@@ -165,6 +165,15 @@
   clicked a flagged word and got a sentence back. `HighlightView` now wraps narrowest → widest, which
   is what the engine's layering contract always said.
 
+- Results pane is **statistics only**: the per-annotation row lists and their group filter pills are gone
+  (a thousand rows of "the = 1.2 bits" is noise). Annotations are browsed by clicking the preview, the
+  coverage strip, or the JSON tab. ToolPanel, the dead row/pill CSS (150 lines) and the render-check
+  assertion all went with them.
+- Selecting is a **toggle**: clicking whatever is already selected clears the inspector, in the preview
+  and in the coverage strip alike.
+- Verified the Dale-Chall work that landed in parallel still functions against the stats-only panels
+  (7 stats each, 0 row lists) and that its selection card still appears.
+
 ## Next steps
 - Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded
   word) — the data is already in the tool's annotations as `data.gain`.

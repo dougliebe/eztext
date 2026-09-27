@@ -52,8 +52,15 @@ const checks: Array<[string, boolean]> = [
   ['preview contains layer tool ids', /data-tool="/.test(html)],
   ['overlapping layers are nested', (html.match(/data-ann="/g)?.length ?? 0) > 0 && (html.match(/<span class="hl/g)?.length ?? 0) > 3],
   ['coverage strip renders', html.includes('coverage__track')],
-  ['result rows render', html.includes('data-row="')],
+  // The results pane is statistics only — annotations are browsed by clicking the
+  // preview, not by scrolling a list of every word.
+  ['no annotation rows render', !html.includes('data-row=') && !html.includes('class="rows"')],
   ['stat cards render', html.includes('stat__value')],
+  // One panel per *enabled* tool: a tool that is off by default has no panel.
+  [
+    'a panel renders per enabled tool',
+    (html.match(/tool-panel__name/g)?.length ?? 0) === tools.filter((tool) => tool.defaultEnabled !== false).length,
+  ],
   ['no unresolved template markers', !html.includes('undefined') && !html.includes('NaN')],
 ];
 
@@ -65,8 +72,7 @@ for (const [label, ok] of checks) {
 }
 
 const annotationCount = html.match(/data-ann="/g)?.length ?? 0;
-const rowCount = html.match(/data-row="/g)?.length ?? 0;
-console.log(`\n  ${annotationCount} rendered highlight spans, ${rowCount} result rows`);
+console.log(`\n  ${annotationCount} rendered highlight spans, ${tools.length} tool panel(s)`);
 console.log(`  ${failures === 0 ? 'all checks passed' : `${failures} CHECK(S) FAILED`}\n`);
 
 if (failures > 0) process.exitCode = 1;

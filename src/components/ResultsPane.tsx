@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { AnalysisRun, ResolvedAnnotation, Stat, Tool } from '../core/types';
+import type { AnalysisRun, Stat, Tool } from '../core/types';
 import { JsonView } from './JsonView';
 import { StatGrid } from './StatGrid';
 import { ToolPanel } from './ToolPanel';
@@ -18,10 +18,6 @@ interface ResultsPaneProps {
   analysis: AnalysisRun;
   tab: TabId;
   onTabChange: (tab: TabId) => void;
-  hoverId: string | null;
-  selectedId: string | null;
-  onHover: (id: string | null) => void;
-  onSelect: (annotation: ResolvedAnnotation) => void;
   /** Selection inspector, pinned above the tab content. */
   selection?: React.ReactNode;
 }
@@ -32,10 +28,6 @@ export function ResultsPane({
   analysis,
   tab,
   onTabChange,
-  hoverId,
-  selectedId,
-  onHover,
-  onSelect,
   selection,
 }: ResultsPaneProps) {
   const statsByTool = useMemo(() => {
@@ -104,10 +96,6 @@ export function ResultsPane({
                   result={run.result}
                   annotations={analysis.byToolAnnotations[tool.id] ?? []}
                   stats={statsByTool.get(tool.id) ?? []}
-                  hoverId={hoverId}
-                  selectedId={selectedId}
-                  onHover={onHover}
-                  onSelect={onSelect}
                 />
               );
             })}

@@ -585,6 +585,22 @@ if (!health?.ready) {
   await page.waitForSelector('.selection', { timeout: 5000 });
   await page.waitForTimeout(200);
 
+  // Clicking the same word again is the way out of the inspector.
+  const selectedFirst = await page.evaluate(() => document.querySelector('.selection__word')?.textContent ?? null);
+  await page.locator('.hl[data-tool="surprisal"]', { hasText: hardest.text }).first().click();
+  await page.waitForTimeout(200);
+  const afterSecondClick = await page.locator('.selection').count();
+  check(
+    'clicking the selected word again deselects it',
+    selectedFirst !== null && afterSecondClick === 0,
+    `first click selected “${selectedFirst}”, second click left ${afterSecondClick} card(s)`,
+  );
+
+  // And selecting something else still works, so the toggle is not a one-way trip.
+  await page.locator('.hl[data-tool="surprisal"]', { hasText: hardest.text }).first().click();
+  await page.waitForSelector('.selection', { timeout: 5000 });
+  await page.waitForTimeout(200);
+
   const card = await page.evaluate(() => ({
     word: document.querySelector('.selection__word')?.textContent,
     bits: document.querySelector('.selection__bits')?.textContent,
@@ -609,6 +625,13 @@ if (!health?.ready) {
     card.rows.map((row) => `${row[1]}=${row[2]}`).join(' '),
   );
   check('the card names the expected word', /expected/.test(card.detail), card.detail.slice(0, 120));
+
+  check(
+    'the results pane lists statistics, not every annotation',
+    (await page.locator('.tool-panel .rows').count()) === 0 &&
+      (await page.locator('.tool-panel .stat').count()) > 6,
+    `${await page.locator('.tool-panel .stat').count()} stat cards, ${await page.locator('.tool-panel .rows').count()} row lists`,
+  );
 
   await page.locator('.selection__close').click();
   await page.waitForTimeout(150);

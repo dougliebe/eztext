@@ -45,7 +45,7 @@ every enabled tool, resolves all the ranges they return into a flat set of non-o
 text ─┬─► sentences ──┐
       ├─► verbs ──────┤   normalise   sweep-line      render
       ├─► repeats ────┼─► ranges ───► segments ─────► nested spans
-      └─► readability ┘                              + result rows
+      └─► readability ┘                              + stats per tool
                                                      + coverage tracks
 ```
 
@@ -299,12 +299,13 @@ typing never blocks on analysis.
 - **Toolbar chip** toggles a tool; **⚙** (or shift-click) opens its settings.
 - **Run model** in the input bar scores the document with the local language model (see *Surprisal*).
 - **Topbar metric** (the five ratios) shades the preview by that metric — click again to clear.
-- **Hover** a highlight, result row or coverage block → the same annotation lights up everywhere.
-- **Click** any highlight — including a surprisal-shaded word — and the results pane pins an inspector at the
+- **Hover** a highlight or a coverage block → the same annotation lights up everywhere.
+- **Click** a highlight in the preview (or a coverage block) → the results pane pins an inspector at the
 top showing the selected text in context and, for model-scored words, the whole distribution the model had
-at that position.
-- **Click** a result row or coverage block → the preview scrolls to that annotation and the row is
-  kept in view. Clicking `JSON` gives you the whole run, ready to copy.
+at that position. **Click the same thing again to deselect.**
+- The results pane carries **statistics per tool**, not a row per annotation: a thousand rows of
+  "the = 1.2 bits" is noise, and the annotations are browsable where they are. The `JSON` tab still has the
+  full set for export.
 - **Drag the splitters** (or focus one and use arrow keys) to rebalance input / preview / results.
 
 ## Topbar metrics
