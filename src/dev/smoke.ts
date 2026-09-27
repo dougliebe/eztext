@@ -30,6 +30,9 @@ import {
 } from '../core/metrics';
 import { contrastRatio, maxMixForContrast, mixHex, parseHex, relativeLuminance } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
+import { DALE_CHALL_WORDS } from '../core/data/dale-chall';
+import { daleChallTool, suggestFamiliarWords, type WordSuggestion } from '../tools/dale-chall.tool';
+import type { AnnotationDraft } from '../core/types';
 import { SAMPLE_TEXT } from '../sample-text';
 import { tools } from '../tools';
 import type { Tool } from '../core/types';
@@ -698,6 +701,177 @@ function main(): void {
     'the tool declares what it needs',
     (surprisalTool.requires ?? []).includes('surprisal'),
     (surprisalTool.requires ?? []).join(', ') || '(nothing declared)',
+  );
+
+  console.log(`\n${RULE}\nDale-Chall tool`);
+
+  // The tool exists to explain the topbar's % unfamiliar, so the two counts must
+  // agree exactly in the default configuration.
+  const metricsForText = computeMetrics(SAMPLE_TEXT);
+  const daleChallRun = daleChallTool.run({ text: SAMPLE_TEXT, options: {} });
+  const daleChall = daleChallRun.annotations ?? [];
+  const suggestionsOf = (annotation: (typeof daleChall)[number]): WordSuggestion[] =>
+    (annotation.data?.suggestions ?? []) as WordSuggestion[];
+  const coveredOf = (annotation: (typeof daleChall)[number]) => SAMPLE_TEXT.slice(annotation.start, annotation.end);
+  check(
+    'highlights exactly what % unfamiliar counts',
+    daleChall.length === metricsForText.unfamiliarWords,
+    `${daleChall.length} annotations vs metric ${metricsForText.unfamiliarWords}`,
+  );
+  check(
+    'every highlighted word really is unfamiliar',
+    daleChall.every((annotation) => !isFamiliarWord(coveredOf(annotation))),
+    `${daleChall.length} checked`,
+  );
+  check(
+    'groups are the suggestion relations plus “no match”',
+    daleChall.every((annotation) =>
+      ['base form', 'shorter form', 'close spelling', 'no match'].includes(annotation.group ?? ''),
+    ),
+    [...new Set(daleChall.map((annotation) => annotation.group))].join(', '),
+  );
+
+  // The promise of the feature: a suggestion is a word that is on the list.
+  const allSuggestions = daleChall.flatMap(suggestionsOf);
+  check(
+    'every suggestion is on the Dale-Chall list',
+    allSuggestions.every((suggestion) => DALE_CHALL_WORDS.has(suggestion.word)),
+    `${allSuggestions.length} suggestions offered`,
+  );
+  check(
+    'nothing is suggested for itself',
+    daleChall.every((annotation) =>
+      suggestionsOf(annotation).every((suggestion) => suggestion.word !== coveredOf(annotation).toLowerCase()),
+    ),
+  );
+  check(
+    'a suggestion list is never longer than the requested cap',
+    daleChall.every((annotation) => suggestionsOf(annotation).length <= 4),
+  );
+  // Per annotation, not across the flattened list: families must come first.
+  check(
+    'family matches outrank spelling matches',
+    daleChall.every((annotation) => {
+      const list = suggestionsOf(annotation);
+      const firstSpelling = list.findIndex((suggestion) => suggestion.relation === 'close spelling');
+      return firstSpelling === -1 || list.slice(firstSpelling).every((s) => s.relation === 'close spelling');
+    }),
+    daleChall.filter((annotation) => suggestionsOf(annotation)[0]?.relation !== 'close spelling' && suggestionsOf(annotation).length > 0).length +
+      ' words led by a family match',
+  );
+  check(
+    'every suggestion carries a relation and a score in range',
+    allSuggestions.every(
+      (suggestion) =>
+        ['base form', 'shorter form', 'close spelling'].includes(suggestion.relation) &&
+        suggestion.similarity > 0 &&
+        suggestion.similarity <= 1,
+    ),
+  );
+
+  // Word-family matches are the useful half, so name the ones that must work.
+  // (Expectations were checked against the list itself: "enormous" is not on it,
+  // which is exactly why the tool reports no suggestion for it.)
+  const familyCases: Array<[string, string]> = [
+    ['reshaping', 'shape'],
+    ['writers', 'write'],
+    ['passage', 'pass'],
+    ['unhappiness', 'happiness'],
+    ['unhappiness', 'unhappy'],
+  ];
+  const familyMisses = familyCases.filter(
+    ([word, expected]) => !suggestFamiliarWords(word, { limit: 6 }).some((s) => s.word === expected),
+  );
+  check(
+    'derived forms point back at their base word',
+    familyMisses.length === 0,
+    familyMisses.length > 0
+      ? familyMisses.map(([word, expected]) => `${word} → ${expected}`).join(', ')
+      : familyCases.map(([word]) => word).join(', '),
+  );
+
+  // A word with no near neighbour must say so rather than invent one.
+  check(
+    'a word with no listed neighbour suggests nothing',
+    suggestFamiliarWords('enormous').length === 0 && suggestFamiliarWords('nevertheless').length === 0,
+    `enormous: ${suggestFamiliarWords('enormous').length}, nevertheless: ${suggestFamiliarWords('nevertheless').length}`,
+  );
+  check(
+    'match strength filters the spelling matches',
+    suggestFamiliarWords('merely', { minSimilarity: 0.45 }).length >
+      suggestFamiliarWords('merely', { minSimilarity: 0.75 }).length,
+    `loose ${suggestFamiliarWords('merely', { minSimilarity: 0.45 }).length} vs strict ${suggestFamiliarWords('merely', { minSimilarity: 0.75 }).length}`,
+  );
+  check(
+    'the suggestion cap is honoured, including zero',
+    suggestFamiliarWords('merely', { limit: 1 }).length <= 1 && suggestFamiliarWords('merely', { limit: 0 }).length === 0,
+  );
+
+  // The options are meant to change the result, and `show` must not change what
+  // the stats call unfamiliar — only what is highlighted.
+  const fixableRun = daleChallTool.run({ text: SAMPLE_TEXT, options: { show: 'fixable' } });
+  check(
+    '“only words with a match” hides the rest',
+    (fixableRun.annotations ?? []).length > 0 &&
+      (fixableRun.annotations ?? []).length < daleChall.length &&
+      (fixableRun.annotations ?? []).every((annotation) => annotation.group !== 'no match'),
+    `${(fixableRun.annotations ?? []).length} of ${daleChall.length} shown`,
+  );
+  check(
+    'the stats still describe the whole document',
+    fixableRun.stats?.find((stat) => stat.id === 'dale-chall.words')?.value === metricsForText.unfamiliarWords,
+    `Unfamiliar words: ${fixableRun.stats?.find((stat) => stat.id === 'dale-chall.words')?.value}`,
+  );
+
+  const namesRun = daleChallTool.run({ text: SAMPLE_TEXT, options: { ignoreNames: true } });
+  const namesStat = namesRun.stats?.find((stat) => stat.id === 'dale-chall.names');
+  check(
+    'the name filter is reported, not silent',
+    namesStat !== undefined &&
+      (namesRun.annotations ?? []).length + Number(namesStat.value) === daleChall.length,
+    `${namesStat?.label ?? '(missing)'}: ${namesStat?.value}`,
+  );
+
+  // The sample happens to have no mid-sentence capitals, so drive the two cases
+  // the filter is meant to separate: a name inside a sentence is skipped, the
+  // same word opening a sentence is not (that is just orthography).
+  const nameProbe = 'The manager, Zoltan, revised everything.';
+  const wordAt = (run: { annotations?: AnnotationDraft[] }, start: number) =>
+    run.annotations?.find((annotation) => annotation.start === start) !== undefined;
+  const nameStart = nameProbe.indexOf('Zoltan');
+  const keptByDefault = daleChallTool.run({ text: nameProbe, options: {} });
+  const skippedByName = daleChallTool.run({ text: nameProbe, options: { ignoreNames: true } });
+  const openingProbe = daleChallTool.run({ text: 'Zoltan revised everything.', options: { ignoreNames: true } });
+  check(
+    'the name filter skips a mid-sentence capital only',
+    wordAt(keptByDefault, nameStart) &&
+      !wordAt(skippedByName, nameStart) &&
+      wordAt(openingProbe, 0) &&
+      skippedByName.stats?.find((stat) => stat.id === 'dale-chall.names')?.value === 1,
+    `mid-sentence kept=${wordAt(keptByDefault, nameStart)}, skipped=${!wordAt(skippedByName, nameStart)}, sentence-initial kept=${wordAt(openingProbe, 0)}`,
+  );
+  check(
+    'asking for no suggestions still highlights the words',
+    (() => {
+      const none = daleChallTool.run({ text: SAMPLE_TEXT, options: { suggestions: 0 } });
+      const annotations = none.annotations ?? [];
+      return (
+        annotations.length === daleChall.length &&
+        annotations.every(
+          (annotation) => annotation.group === 'no match' && suggestionsOf(annotation).length === 0,
+        )
+      );
+    })(),
+    'every word falls into “no match”',
+  );
+
+  const sampleSuggestions = daleChall.filter((annotation) => suggestionsOf(annotation).length > 0);
+  console.log(
+    `  sample: ${daleChall.length} flagged, ${sampleSuggestions.length} with a match — ` +
+      sampleSuggestions
+        .slice(0, 4)
+        .map((annotation) => `${coveredOf(annotation)}→${suggestionsOf(annotation)[0]?.word}`)
+        .join(', '),
   );
 
   console.log(`\n${RULE}\nOverlap & invariants`);

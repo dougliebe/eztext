@@ -6,13 +6,14 @@
  * tie-breaker for overlapping highlight layers (earlier = lower layer).
  */
 import type { Tool } from '../core/types';
+import { daleChallTool } from './dale-chall.tool';
 import { readabilityTool } from './readability.tool';
 import { surprisalTool } from './surprisal.tool';
 
-export const tools: Tool[] = [readabilityTool, surprisalTool];
+export const tools: Tool[] = [readabilityTool, surprisalTool, daleChallTool];
 
 export function getTool(id: string): Tool | undefined {
   return tools.find((tool) => tool.id === id);
 }
 
-export { readabilityTool, surprisalTool };
+export { daleChallTool, readabilityTool, surprisalTool };

@@ -615,6 +615,51 @@ if (!health?.ready) {
   check('the card can be dismissed', (await page.locator('.selection').count()) === 0);
 }
 
+// --- 9. Dale-Chall suggestions -------------------------------------------
+// A controlled document: block 8 rewrites the textarea when the model is
+// running, so nothing here may depend on what came before.
+await page.fill('.input__area', 'The writers were reshaping the passage.');
+await page.waitForTimeout(300);
+await page.locator('.chip__main', { hasText: 'Dale' }).first().click();
+await page.waitForTimeout(250);
+
+const flaggedWords = await page.evaluate(() =>
+  [...document.querySelectorAll('.hl[data-tool="dale-chall"]')].map((node) => node.textContent),
+);
+check(
+  'Dale-Chall flags the unfamiliar words',
+  ['writers', 'reshaping', 'passage'].every((word) => flaggedWords.includes(word)),
+  flaggedWords.join(' '),
+);
+
+// Only a word the tool has an answer for carries the suggestions in its tooltip.
+const withSuggestions = page.locator('.hl[data-tool="dale-chall"][title*="Nearest listed words"]');
+check('flagged words carry their suggestions in the tooltip', (await withSuggestions.count()) > 0);
+await withSuggestions.first().click();
+await page.waitForTimeout(250);
+
+const inspector = await page.evaluate(() => {
+  const node = document.querySelector('.selection');
+  if (!node) return null;
+  return {
+    eyebrow: node.querySelector('.selection__eyebrow')?.textContent?.trim() ?? null,
+    word: node.querySelector('.selection__word')?.textContent?.trim() ?? null,
+    suggestions: [...node.querySelectorAll('.alts__word')].map((el) => el.textContent.trim()),
+    relations: [...node.querySelectorAll('.selection__hint')].map((el) => el.textContent.trim()),
+  };
+});
+check(
+  'clicking a flagged word opens the inspector',
+  inspector !== null && (inspector.eyebrow ?? '').includes('Dale'),
+  `${inspector?.eyebrow} — “${inspector?.word}”`,
+);
+check('the inspector lists the nearest listed words', (inspector?.suggestions.length ?? 0) > 0, inspector?.suggestions.join(', '));
+check(
+  'each suggestion says how it relates',
+  inspector !== null && inspector.relations.length === inspector.suggestions.length,
+  inspector?.relations.join(', '),
+);
+
 await browser.close();
 console.log(`\n  ${failures === 0 ? 'all checks passed' : `${failures} CHECK(S) FAILED`}\n`);
 process.exitCode = failures === 0 ? 0 : 1;

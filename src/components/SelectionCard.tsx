@@ -25,6 +25,7 @@ export function SelectionCard({ selection, scores, text, onClose }: SelectionCar
   // its first piece — a continuation piece would report the wrong distribution.
   const token = word ? (scores?.tokens.find((candidate) => candidate.start === word.start) ?? null) : null;
   const bits = typeof selection.data?.bits === 'number' ? selection.data.bits : null;
+  const suggestions = readSuggestions(selection.data);
 
   return (
     <section className="selection" aria-label="Selected text">
@@ -56,6 +57,8 @@ export function SelectionCard({ selection, scores, text, onClose }: SelectionCar
       ) : (
         <p className="selection__detail">{selection.detail ?? 'No further detail for this range.'}</p>
       )}
+
+      {suggestions.length > 0 && <Suggestions items={suggestions} />}
     </section>
   );
 }
@@ -147,4 +150,72 @@ function contextAround(text: string, start: number, end: number, span = 70): str
   const after = text.slice(end, to).replace(/\s+/g, ' ');
   const word = text.slice(start, end).replace(/\s+/g, ' ');
   return `${from > 0 ? '…' : ''}${before}【${word}】${after}${to < text.length ? '…' : ''}`;
+}
+
+/** Display names for the relations a tool can attach to a suggestion. */
+const RELATION_LABELS: Record<string, string> = {
+  'base form': 'its base word',
+  'shorter form': 'a shorter form of it',
+  'close spelling': 'close in spelling',
+};
+
+interface SuggestionRow {
+  word: string;
+  relation?: string;
+}
+
+/**
+ * Alternatives a tool attaches to an annotation — Dale–Chall's nearest listed
+ * words, for instance.
+ *
+ * Deliberately tolerant about the payload: a tool may send plain strings or
+ * objects carrying `word` (and optionally `relation`), so any tool can offer
+ * suggestions without the inspector knowing which tool it is.
+ */
+function readSuggestions(data: Record<string, unknown> | undefined): SuggestionRow[] {
+  const raw = data?.suggestions;
+  if (!Array.isArray(raw)) return [];
+
+  const rows: SuggestionRow[] = [];
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      if (entry) rows.push({ word: entry });
+      continue;
+    }
+    if (entry && typeof entry === 'object' && 'word' in entry) {
+      const word = String((entry as { word: unknown }).word ?? '');
+      const relation = (entry as { relation?: unknown }).relation;
+      if (word) rows.push({ word, relation: typeof relation === 'string' ? relation : undefined });
+    }
+  }
+  return rows;
+}
+
+function Suggestions({ items }: { items: SuggestionRow[] }) {
+  return (
+    <div className="selection__body">
+      <table className="alts">
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Suggestion</th>
+            <th scope="col">Relation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, rank) => (
+            <tr key={item.word}>
+              <td className="alts__rank">{rank + 1}</td>
+              <td className="alts__word">{item.word}</td>
+              <td>
+                <span className="selection__hint">
+                  {item.relation ? (RELATION_LABELS[item.relation] ?? item.relation) : 'similar word'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

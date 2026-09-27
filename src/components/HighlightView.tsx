@@ -75,7 +75,13 @@ function SegmentView({ segment, hoverId, selectedId, onHover, onSelect }: Segmen
 
   let content: ReactNode = segment.text;
 
-  segment.layers.forEach((layer: ResolvedAnnotation, depth: number) => {
+  // Wrap from the narrowest layer outwards, so the widest (structural) annotation
+  // — the sentence, say — ends up as the outermost element. That is what makes it
+  // the background tint, and, just as importantly, it leaves the *narrowest*
+  // annotation as the deepest element under the pointer: a click on a word inside
+  // a flagged sentence must select the word, not the sentence.
+  [...segment.layers].reverse().forEach((layer: ResolvedAnnotation, index: number) => {
+    const depth = total - 1 - index;
     const state = layer.id === selectedId ? 'selected' : layer.id === hoverId ? 'hover' : 'none';
     const isTop = depth === total - 1;
 
