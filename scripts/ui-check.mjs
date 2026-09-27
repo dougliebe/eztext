@@ -638,8 +638,14 @@ if (!health?.ready) {
   const card = await page.evaluate(() => ({
     word: document.querySelector('.inspector__word')?.textContent,
     bits: document.querySelector('.inspector__bits')?.textContent,
+    range: document.querySelector('.inspector__range')?.textContent ?? '',
     rows: [...document.querySelectorAll('.next tbody tr')].map((tr) =>
-      [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()),
+      // The phrase cell may carry the "written" tag; it is not part of the phrase.
+      [...tr.querySelectorAll('td')].map((td) => {
+        const copy = td.cloneNode(true);
+        copy.querySelectorAll('.next__tag').forEach((tag) => tag.remove());
+        return copy.textContent.trim();
+      }),
     ),
     stats: [...document.querySelectorAll('.inspector__stat')].map((node) => ({
       label: node.querySelector('.inspector__stat-label')?.textContent ?? '',
@@ -669,9 +675,42 @@ if (!health?.ready) {
     continuation ? card.rows.map((row) => row[2]).join(' ≤ ') : 'n/a',
   );
   check(
-    'the card names the word the model expected here',
-    card.stats.some((stat) => /cheaper/i.test(stat.label) && stat.value.length > 1),
+    'the card reports the word\'s own numbers',
+    ['surprisal', 'probability', 'pieces'].every((label) =>
+      card.stats.some((stat) => stat.label.toLowerCase() === label && stat.value.length > 0),
+    ),
     card.stats.map((stat) => `${stat.label}=${stat.value}`).join(' '),
+  );
+  // A regression guard with a specific history: a prompt ending in a bare space
+  // leaves GPT-2 holding a token its training text never contains, and it answers
+  // with the separator rows of its web corpus. That was 26% of rows before the
+  // trailing space was dropped from the prompt.
+  check(
+    'no continuation is separator junk',
+    continuation && card.rows.every((row) => !/[_-]{3,}|\|/.test(row[1])),
+    continuation ? card.rows.map((row) => row[1]).join(' / ').slice(0, 140) : 'n/a',
+  );
+
+  // The prompt must stop where the selected word *starts*, so the model's first
+  // word is its candidate for the slot the writer filled. Asking the model the
+  // same question directly is the only way to check the client sliced there —
+  // an off-by-one-word prompt looks perfectly plausible in the table.
+  const [rangeStart] = (card.range.match(/^(\d+)/) ?? []).map(Number);
+  const documentText = await page.inputValue('.input__area');
+  const direct = await fetch(`${baseUrl}/api/model/continue`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: documentText.slice(0, rangeStart) }),
+  })
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null);
+  const fromApi = (direct?.rows ?? []).map((row) => row.text).join(' | ');
+  check(
+    'continuations are asked for the text before the word, not after it',
+    fromApi.length > 0 && fromApi === card.rows.map((row) => row[1]).join(' | '),
+    fromApi === card.rows.map((row) => row[1]).join(' | ')
+      ? `“${card.word}” at ${card.range}: the table matches the model asked for the prefix`
+      : `table: ${card.rows.map((row) => row[1]).join(' | ').slice(0, 90)} / api: ${fromApi.slice(0, 90)}`,
   );
 
   check(

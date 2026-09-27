@@ -1592,6 +1592,20 @@ button {
   color: var(--text-strong);
 }
 
+/* The branch that reproduces the writer's own word — the model agreeing. */
+.next__row--written {
+  background: var(--accent-soft);
+}
+
+.next__tag {
+  margin-left: 6px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
 .next__bits {
   width: 1%;
   white-space: nowrap;

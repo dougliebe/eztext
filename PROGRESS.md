@@ -181,8 +181,23 @@
 - **Where the model goes next**: the inspector's ranked next-token table is replaced by five five-word
   continuations, asked of a new `POST /continue` (`.tmp/probe-continue*.mjs` hold the measurements that
   shaped it).
-  - The five opening pieces are forced to be **distinct** — five beams that all start with the same word
-    say nothing — and each branch then walks greedily, accumulating its own exact `−log₂ P` per piece.
+  - The prompt stops where the selected word **starts**, not where it ends, so the model's first word is
+    its candidate for the slot the writer filled: "I want to eat ␣salmon␣" asks about "I want to eat …",
+    and the answers are salmon's replacements and where each would have led. A row opening with the writer's
+    own word is tagged "written"; when no row is tagged, the model never expected that word at all.
+  - **The prompt must not end in a space.** GPT-2's BPE folds a word boundary into the next token, so a
+    trailing space leaves it holding a bare `"Ġ"` — a state absent from its training text — and it answers
+    with the separator rows of its web corpus (`"___________"`, `"----"`). Measured across the sample
+    document: **26% of rows** were that junk, and **0%** after trimming the trailing space. A ui-check
+    assertion now guards it ("no continuation is separator junk"). A second assertion asks the model the
+    same question directly and requires the table to match, which is what proves the client sliced the
+    prompt at the word's *start* — an off-by-one-word prompt looks perfectly plausible in the table.
+  - **Words, not tokens** — the question of which is easier, answered by measurement: five complete words
+    need 6–9 tokens (median 8, `.tmp/probe-tokens.mjs`), and a fixed 8-token cut lands on a word boundary
+    only 89% of the time, so ~1 row in 9 would read "salmon on a pl". Cost is the same either way (~8
+    forwards), so the word rule stays and every row shows five whole words.
+  - The five openings are forced to be **distinct** — five beams that all start with the same word say
+    nothing — and each branch then walks greedily, accumulating its own exact `−log₂ P` per piece.
   - `generate()` is unusable for this: `num_beams: 5, num_return_sequences: 5` returned **one** row, the
     scores are a `// TODO` in v4.3, and the sampler takes only the first of the candidates it ranks.
   - The KV cache is unusable too: the merged ONNX graph takes no `position_ids` input, so a hand-driven

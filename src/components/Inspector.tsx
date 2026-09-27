@@ -55,7 +55,12 @@ export function Inspector({ selection, scores, text, onClose }: InspectorProps) 
 
       {word ? <WordStats word={word} /> : <p className="inspector__detail">{selection.detail ?? 'No further detail for this range.'}</p>}
 
-      <Continuations rows={continuations.rows} pending={continuations.pending} enabled={scores !== null} />
+      <Continuations
+        rows={continuations.rows}
+        pending={continuations.pending}
+        enabled={scores !== null}
+        written={selection.text.trim()}
+      />
 
       {suggestions.length > 0 && <Suggestions items={suggestions} />}
     </section>
@@ -63,22 +68,28 @@ export function Inspector({ selection, scores, text, onClose }: InspectorProps) 
 }
 
 /**
- * Where the model would take the sentence from here.
+ * Where the model would take the sentence, starting *at* the selection.
  *
- * Requested per selection rather than computed with the run: five branches of
- * five words take the model about a second, which is a fine price for one
- * deliberate click and far too much to pay for every keystroke.
+ * The prompt stops where the selected word starts, so the model's first word is
+ * its candidate for the slot the writer filled — which is what makes this cover
+ * the surprising word rather than talking about what follows it. For "I want to
+ * eat ␣salmon␣", the question is "I want to eat …", and the answers are salmon's
+ * replacements and whatever the model would have written after them.
+ *
+ * Requested per selection rather than computed with the run: five branches take
+ * the model about a second, which is fine for one deliberate click and far too
+ * much to pay for every keystroke.
  */
 function useContinuation(text: string, selection: ResolvedAnnotation | null, enabled: boolean) {
   const cache = useRef(new Map<string, Continuation[]>());
   const [fetched, setFetched] = useState<{ key: string; rows: Continuation[] } | null>(null);
   const [pending, setPending] = useState(false);
 
-  const prefix = selection ? text.slice(0, selection.end) : '';
+  const prefix = selection ? text.slice(0, selection.start) : '';
   // Keyed on the text the model actually sees (its tail) as well as the offset,
   // so editing *after* the selection — which cannot change the continuation —
   // reuses the answer, while editing before it does not.
-  const key = selection ? `${selection.end}\u0000${prefix.slice(-48)}` : '';
+  const key = selection ? `${selection.start}\u0000${prefix.slice(-48)}` : '';
 
   useEffect(() => {
     if (!key || !enabled) {
@@ -120,16 +131,19 @@ function Continuations({
   rows,
   pending,
   enabled,
+  written,
 }: {
   rows: Continuation[] | null;
   pending: boolean;
   enabled: boolean;
+  /** The word the writer actually used, so the model's branch matching it can be marked. */
+  written: string;
 }) {
   return (
     <div className="inspector__body">
       <p className="inspector__lead">
         Where the model goes next
-        {rows && rows.length > 0 && <span className="inspector__hint">five words, from this point</span>}
+        {rows && rows.length > 0 && <span className="inspector__hint">from the selected word on</span>}
       </p>
 
       {!enabled ? (
@@ -140,6 +154,8 @@ function Continuations({
         <p className="inspector__detail" aria-busy={pending || undefined}>
           {pending ? 'Asking the model…' : 'The model process stopped, so there is no continuation to show.'}
         </p>
+      ) : rows.length === 0 ? (
+        <p className="inspector__detail">Nothing before this point for the model to continue from.</p>
       ) : (
         <table className="next">
           <thead>
@@ -150,15 +166,23 @@ function Continuations({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, rank) => (
-              <tr key={row.text}>
-                <td className="next__rank">{rank + 1}</td>
-                <td className="next__text">{row.text}</td>
-                <td className="next__bits" title="−log₂ P of the whole phrase">
-                  {row.bits.toFixed(2)}
-                </td>
-              </tr>
-            ))}
+            {rows.map((row, rank) => {
+              // A row that opens with the writer's own word is the model agreeing:
+              // where it lands is the whole story of how expected this word was.
+              const mine = sameWord(firstWord(row.text), written);
+              return (
+                <tr key={row.text} className={mine ? 'next__row--written' : undefined}>
+                  <td className="next__rank">{rank + 1}</td>
+                  <td className="next__text">
+                    {row.text}
+                    {mine && <span className="next__tag">written</span>}
+                  </td>
+                  <td className="next__bits" title="−log₂ P of the whole phrase">
+                    {row.bits.toFixed(2)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -166,17 +190,29 @@ function Continuations({
   );
 }
 
+const firstWord = (phrase: string) => phrase.split(' ')[0] ?? '';
+
+/** Compare on letters only, so "revise" matches "revise." and "Revise". */
+function sameWord(a: string, b: string): boolean {
+  const clean = (value: string) => value.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+  const left = clean(a);
+  const right = clean(b);
+  return left.length > 0 && left === right;
+}
+
 /**
  * The selected word's own numbers.
  *
- * The ranked next-token table that used to live here is gone: the inspector now
- * shows where the model goes *from here*, which is the more useful question of
- * the two, and the word it expected is kept as a single field rather than a
- * table of near-misses.
+ * Only figures about the word that was written: how much it cost, how likely it
+ * was, how many pieces it took. What the model expected *instead* is the
+ * continuation table's job now — it answers that from the same prompt the phrases
+ * come from, and it names the written word when the model offered it. A second
+ * "cheaper word" here would answer the same question from the whole-document
+ * distribution instead of the table's shortened context, so the two would
+ * sometimes disagree in front of the reader.
  */
 function WordStats({ word }: { word: ScoredWord }) {
   const probability = 2 ** -word.bits;
-  const expected = word.expected;
 
   return (
     <div className="inspector__body">
@@ -187,9 +223,6 @@ function WordStats({ word }: { word: ScoredWord }) {
           value={probability < 0.001 ? probability.toExponential(1) : `${(probability * 100).toFixed(2)}%`}
         />
         <Field label="Pieces" value={String(word.tokenCount)} />
-        {expected && (
-          <Field label="Cheaper word" value={`${expected.text.trim() || '␣'} · ${expected.gain.toFixed(2)} bits`} tone="warn" />
-        )}
       </div>
     </div>
   );

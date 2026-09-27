@@ -223,31 +223,57 @@ Both come from the same logits, so the second is free. Worked examples from the 
 
 ### Where the model goes next
 
-Selecting a word asks the model a second, larger question: if the document stopped here, what would you
-write? The inspector answers with five phrases of five words, each starting from a different one of the
-model's likeliest next pieces.
+Selecting a word asks the model a second question, and the prompt stops where that word *starts*: what
+would you have written here, and where would you have taken it? The inspector answers with five phrases of
+five words, each beginning with a different one of the model's likeliest pieces at that slot.
 
 ```
-Most writers 【revise.】
+…revision is slow, and the 【patience】 it demands is enormous
 
-  1  When you revise, you are        14.02 bits
-  2  The more you revise, the        14.09 bits
-  3  They revise to find new         19.25 bits
-  4  I have a lot of                 20.57 bits
-  5  If you are not writing,         20.64 bits
+  1  process is slow, and the        18.80 bits
+  2  best writers are often the      22.52 bits
+  3  writing is slow. The writing    24.75 bits
+  4  writers are not ready to        24.95 bits
+  5  grammar is slow. The grammar    25.11 bits
 ```
 
-This is the useful reading of the model: the document goes on to say "They cut adjectives", and the
-interesting fact is not that the model found `They` unlikely but that it thought the sentence was heading
-somewhere else entirely. Bits are the whole phrase's `−log₂ P`, so rows are comparable: row 3 is
-`2^5.2 ≈ 37×` less likely than row 1.
+The slot matters. Stopping the prompt one word *earlier* is what makes this cover the surprising word
+instead of talking past it: the first word of every row is a candidate replacement for `patience`, and the
+other four words show where the model would have gone from there. For "I want to eat ␣salmon␣" the question
+becomes "I want to eat …", so the answers are salmon's replacements rather than what comes after salmon. A
+row that opens with the writer's own word is marked **written** — the model agreeing — and when no row is
+marked, the model never expected that word at all, which is the perturbation story in one glance.
 
-Deliberate design decisions, each of them measured rather than assumed:
+Bits are the whole phrase's `−log₂ P`, so rows compare directly: row 3 is `2^5.9 ≈ 60×` less likely than
+row 1. Probability is deliberately not shown; it is a monotone transform of bits.
 
-- **Not beam search.** The five opening pieces are *forced* to be distinct. Five beams that all open with
-  the same word answer a question nobody asked — the ranked next words are already shown in the card, so
-  what a reader cannot get anywhere else is the phrase.
-- **Not `generate()`.** transformers.js v4 beam search returns one sequence for `num_beams: 5,
+**Words, not tokens.** A fixed token budget would be simpler — the walk would stop on a fixed count instead
+of counting words — but it costs the guarantee the table needs. Measured over 27 positions in the sample
+document: five complete words need 6–9 tokens (median 8), and a fixed cut of 8 tokens lands on a word
+boundary only 89% of the time, so about one row in nine would end mid-word ("salmon on a pl"). The word
+rule costs the same ~8 forwards and every row reads as five words.
+
+**The prompt must not end in a space.** GPT-2's BPE folds a word boundary into the *next* token, so a prompt
+ending in a space leaves the model holding a bare `"Ġ"` — a state its training text never contains, because
+documents are tokenised whole. Asked from that state it answers with the separator rows of its web corpus:
+
+```
+before dropping the trailing space        after
+  ick. The problem is that                  a little bit of a
+  ills. The problem with revision           slow. The first time I
+  ___________. The first thing I            short. The first step is
+  slow." "I'm not sure I                    not always good. The first
+```
+
+That was 26% of rows across the document, and 0% after trimming one trailing space — so the check that
+no continuation contains a separator run exists to keep it that way. Bits are unaffected by the trim: the
+model writes the word with its own leading space, which the display removes anyway.
+
+Other decisions, each measured rather than assumed:
+
+- **Not beam search.** The five openings are *forced* to be distinct. Five beams that all begin with the
+  same word answer nothing, and the ranked next words are what the card already had.
+- **Not `generate()`.** transformers.js v4 returns one sequence for `num_beams: 5,
   num_return_sequences: 5`, drops the scores (`// TODO: scores`), and its sampler takes only the first of the
   candidates it ranks. Tested in `.tmp/probe-continue5.mjs` before anything was built on it.
 - **Not the KV cache.** A cached step in this ONNX export costs ~45 ms whether the context is 32 tokens or
@@ -363,8 +389,8 @@ surfaces and most of what we talk about lives in a specific one.
 - **Hover** a highlight or a coverage block → the same annotation lights up everywhere.
 - **Click** a highlight in the preview (or a coverage block) → the **inspector** pins to the top of the
   results pane showing the selected text in context, the word's own numbers, and — with the model running —
-  the five phrases it would write next (see *Where the model goes next*). **Click the same thing again to
-  deselect.**
+  the five phrases it would write *from that word onwards* (see *Where the model goes next*). **Click the
+  same thing again to deselect.**
 - The results pane carries **statistics per tool**, not a row per annotation: a thousand rows of
   "the = 1.2 bits" is noise, and annotations are browsable where they are. The `JSON` tab still has the
   full set for export.
