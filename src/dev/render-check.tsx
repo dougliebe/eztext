@@ -54,6 +54,8 @@ const checks: Array<[string, boolean]> = [
   ['coverage strip renders', html.includes('coverage__track')],
   ['result rows render', html.includes('data-row="')],
   ['stat cards render', html.includes('stat__value')],
+  ['group explanations render', html.includes('group-notes') && html.includes('What these groups mean')],
+  ['tool summaries render', html.includes('tool-panel__summary')],
   ['no unresolved template markers', !html.includes('undefined') && !html.includes('NaN')],
 ];
 

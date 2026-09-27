@@ -131,6 +131,11 @@
 - **Highlight renderer shows tint only** (user request): the stacked per-layer underlines are gone.
   Each nested layer still washes its own translucent background, and the washes compound on overlap,
   so depth remains visible without any decoration under the text.
+- **Every tool explains its groups** (`ToolResult.summary` + `groupDescriptions`): the results panel
+  renders one general line above the stats and a per-group “what this means / what to do” list under
+  the filter pills. GSDS states that density is not an error; Readability and Surprisal got
+  descriptions too. Smoke fails if a tool emits an annotation group with no explanation, and the
+  render check asserts the explanations reach the page.
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long

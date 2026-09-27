@@ -25,6 +25,56 @@ const VARIABLE_BY_GROUP: Record<GsdsFeatureKind, (typeof GSDS_VARIABLES)[number]
 };
 
 /**
+ * What the score means, and what each group contributes to it.
+ *
+ * GSDS is a density instrument, not an error list: a flagged word is not a
+ * mistake, it is complexity. The descriptions therefore say what the feature
+ * does to the score and what a writer usually changes, leaving the goal —
+ * simplify or add structure — to the reader.
+ */
+const SUMMARY =
+  'Golub’s density score climbs when clauses carry more embedded structure. Higher is denser and ' +
+  'harder to read — not an error — and each group below says what it contributes and how a writer ' +
+  'usually adjusts it.';
+
+const GROUP_DESCRIPTIONS: Record<string, string> = {
+  modal:
+    'Modals shade possibility and obligation (can, should, must), and each one expands the verb phrase ' +
+    'in Golub’s count. A cluster can sound hedged; where the sentence can commit, one confident modal ' +
+    'reads better than three cautious ones.',
+  'be/have':
+    'Forms of be and have helping another verb carry tense, aspect and passive voice. A passive hides ' +
+    'the actor and stacked auxiliaries add words without content, though a passive is right when the ' +
+    'actor is unknown. The formula counts only the helping position; the option switches to the 1974 ' +
+    'program’s all-forms reading.',
+  preposition:
+    'A preposition packages a relationship into a phrase instead of a clause (in the morning rather ' +
+    'than when morning came) — the compression the score rewards. Long chains (the colour of the roof ' +
+    'of the house) are where that turns into soup; breaking the chain is usually clearer.',
+  possessive:
+    'Possessive nouns and pronouns (the writer’s point, their plan) mark nominal density; the instrument ' +
+    'counts only the apostrophe form, so an of-phrase is invisible to it. A possessive is usually the ' +
+    'tighter choice — reach for one when an of-chain does the work of a single ’s.',
+  'time-adverb':
+    'Time words from Golub’s list (then, once, while, soon) anchor events and can stand in for a whole ' +
+    'clause. The instrument counts them by form, so while and before are counted here and again as ' +
+    'subordinators; a passage dense with them reads as a timeline rather than an argument.',
+  verbal:
+    'An -ing/-ed/-en word not attached to a helping verb is a reduction: a clause compressed into a ' +
+    'modifier (the man running, written by hand). Reductions are efficient, but this is the noisiest ' +
+    'variable — participial adjectives are caught too. When a modifier’s subject is unclear, expanding ' +
+    'it into a clause is the fix.',
+  'sub-clause':
+    'Every subordinator or relative pronoun adds a layer of embedding to a main clause (because…, who…). ' +
+    'One or two layers read fine; several nested together is where the main thread disappears. Promoting ' +
+    'one clause to its own sentence is the usual remedy.',
+  't-unit':
+    'The T-unit is what the score divides by: one main clause plus everything attached to it, with ' +
+    'coordinated main clauses as separate units. The layer is shown so you can see exactly what is being ' +
+    'counted — a few long T-units and many short ones can reach the same word count and score differently.',
+};
+
+/**
  * Golub Syntactic Density Score.
  *
  * The score is ten weighted variables divided by the number of T-units. This
@@ -232,6 +282,6 @@ export const gsdsTool: Tool = {
       },
     ];
 
-    return { annotations, stats };
+    return { annotations, stats, summary: SUMMARY, groupDescriptions: GROUP_DESCRIPTIONS };
   },
 };

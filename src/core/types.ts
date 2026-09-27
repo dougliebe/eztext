@@ -101,6 +101,19 @@ export interface ToolResult {
   annotations?: AnnotationDraft[];
   stats?: Stat[];
   notes?: Note[];
+  /**
+   * One or two general sentences rendered above the stats: what this tool's
+   * numbers mean and which direction is denser or easier. Run-specific
+   * diagnostics belong in `notes` instead.
+   */
+  summary?: string;
+  /**
+   * One general explanation per annotation `group`, rendered once beside the
+   * group filters. The per-annotation `detail` says why *this* range fired;
+   * this says what the category means and what a writer usually does about it,
+   * so a reader is never left with unexplained highlights.
+   */
+  groupDescriptions?: Record<string, string>;
 }
 
 /* ------------------------------------------------------------------ */

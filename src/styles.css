@@ -1180,6 +1180,63 @@ button {
   padding: 10px;
 }
 
+.tool-panel__summary {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Per-group explanations: what each flagged category means and what to do
+   about it, once per panel rather than repeated on every row. */
+.group-notes {
+  padding: 6px 9px;
+  border: 1px dashed var(--dash);
+  background: var(--bg-0);
+}
+
+.group-notes > summary {
+  cursor: pointer;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-dim);
+  user-select: none;
+}
+
+.group-notes > summary:hover {
+  color: var(--text);
+}
+
+.group-notes dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 7px 0 0;
+}
+
+.group-notes__row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.group-notes__row dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.group-notes__row dd {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 .filters {
   display: flex;
   flex-wrap: wrap;

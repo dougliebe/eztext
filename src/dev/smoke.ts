@@ -61,6 +61,26 @@ function main(): void {
     if (sample.length > 0) console.log(`   first: ${sample.join(', ')}`);
   }
 
+  // A highlight a reader cannot interpret is noise. Every group a tool emits
+  // must carry a general explanation of what it means and what to do about it.
+  console.log('\n  group explanations:');
+  for (const tool of tools) {
+    const annotations = run.byToolAnnotations[tool.id] ?? [];
+    const groups = [
+      ...new Set(
+        annotations
+          .map((annotation) => annotation.group)
+          .filter((group): group is string => Boolean(group)),
+      ),
+    ];
+    const described = run.byTool[tool.id]?.result.groupDescriptions ?? {};
+    check(
+      `  ${tool.name}: every group has an explanation`,
+      groups.every((group) => Boolean(described[group])),
+      groups.map((group) => (described[group] ? group : `${group} (MISSING)`)).join(', ') || 'no groups',
+    );
+  }
+
   console.log(`\n${RULE}\nDocument metrics`);
   const metrics = computeMetrics(SAMPLE_TEXT);
   const table: Array<[string, string]> = [

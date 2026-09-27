@@ -44,6 +44,14 @@ export function ToolPanel({
     [annotations, groupFilter],
   );
 
+  // Only the groups that actually fired, in the same order as the filter pills.
+  const groupDescriptions = useMemo(() => {
+    const provided = result.groupDescriptions ?? {};
+    return groups.flatMap(([group]) =>
+      provided[group] ? [[group, provided[group]] as [string, string]] : [],
+    );
+  }, [groups, result.groupDescriptions]);
+
   // Keep the clicked annotation visible in the list.
   useEffect(() => {
     if (!selectedId || !listRef.current) return;
@@ -79,6 +87,8 @@ export function ToolPanel({
 
       {!collapsed && (
         <div className="tool-panel__body">
+          {result.summary && <p className="tool-panel__summary">{result.summary}</p>}
+
           {stats.length > 0 && <StatGrid stats={stats} />}
 
           {groups.length > 1 && (
@@ -101,6 +111,20 @@ export function ToolPanel({
                 </button>
               ))}
             </div>
+          )}
+
+          {groupDescriptions.length > 0 && (
+            <details className="group-notes" open>
+              <summary>What these groups mean</summary>
+              <dl>
+                {groupDescriptions.map(([group, description]) => (
+                  <div className="group-notes__row" key={group}>
+                    <dt>{group}</dt>
+                    <dd>{description}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
           )}
 
           {visible.length === 0 ? (
