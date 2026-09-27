@@ -13,6 +13,11 @@
  *
  * Scoring arithmetic lives in `src/core/surprisal.ts` and is bundled in here, so
  * the process and the app share one implementation.
+ *
+ * The same process also answers "what familiar word means most nearly this one?"
+ * for the Dale-Chall tool (`POST /similarity`), lazily loading
+ * `Xenova/bge-small-en-v1.5` (~34 MB) and a cached vector per Dale-Chall word on
+ * first use. See `scripts/word-embeddings.mjs`.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -20,6 +25,7 @@ import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { AutoModelForCausalLM, AutoTokenizer, Tensor, env } from '@huggingface/transformers';
+import { embeddingInfo, similarityForText } from './word-embeddings.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -218,7 +224,39 @@ const server = createServer(async (request, response) => {
       modelFile: MODEL_FILE,
       cacheDir: env.cacheDir,
       topK: TOP_K,
+      // The word-embedding side of this process, for tools that need meaning
+      // rather than probability. Loaded lazily, so `ready` is false until a
+      // /similarity call (or the warm-up below) touches it.
+      embeddings: embeddingInfo(),
     });
+    return;
+  }
+
+  // Nearest Dale-Chall words by meaning, for every unfamiliar word in the text.
+  if (url.pathname === '/similarity' && request.method === 'POST') {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+
+    let body;
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    } catch {
+      json(response, 400, { error: 'body must be JSON' });
+      return;
+    }
+
+    const text = typeof body.text === 'string' ? body.text : '';
+    if (!text.trim()) {
+      json(response, 200, { ...embeddingInfo(), candidates: 0, words: {} });
+      return;
+    }
+
+    try {
+      const requested = Number(body.k);
+      json(response, 200, await similarityForText(text, Number.isFinite(requested) ? { k: requested } : {}));
+    } catch (error) {
+      json(response, 500, { error: String(error?.message ?? error) });
+    }
     return;
   }
 

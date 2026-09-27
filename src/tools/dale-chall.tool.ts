@@ -1,6 +1,6 @@
 import { DALE_CHALL_SIZE, DALE_CHALL_WORDS } from '../core/data/dale-chall';
 import { isFamiliarWord } from '../core/metrics';
-import { commonPrefixLength, similarity } from '../core/similarity';
+import { commonPrefixLength, similarity, type SemanticNeighbour } from '../core/similarity';
 import { splitSentences, tokenizeWords } from '../core/text';
 import type { AnnotationDraft, Stat, Tool } from '../core/types';
 
@@ -28,23 +28,42 @@ import type { AnnotationDraft, Stat, Tool } from '../core/types';
  */
 
 /** Relations, best first. Also used verbatim as the annotation groups. */
-type Relation = 'base form' | 'shorter form' | 'close spelling';
+type Relation = 'base form' | 'shorter form' | 'similar meaning' | 'close spelling';
 
 export interface WordSuggestion {
   word: string;
   relation: Relation;
-  /** Raw spelling similarity, 0–1. Ranking is by relation first, then this. */
+  /**
+   * How close, 0–1. For family and spelling relations this is spelling
+   * distance; for `similar meaning` it is the embedding cosine — which is why
+   * the inspector shows the relation rather than pretending the two are the
+   * same number.
+   */
   similarity: number;
 }
 
+/**
+ * Ranking order. Word family first: "passage" → "pass" is a *simpler word for
+ * the same idea*, which is what a readability tool is for. Meaning comes next,
+ * and spelling last — it only runs when no model answered, and it is the tier
+ * that offers "merely" → "merry".
+ */
 const RELATION_RANK: Record<Relation, number> = {
   'base form': 0,
   'shorter form': 1,
-  'close spelling': 2,
+  'similar meaning': 2,
+  'close spelling': 3,
 };
 
 /** Match strength → how close a spelling has to be before it is offered. */
 const STRENGTH: Record<string, number> = { loose: 0.45, balanced: 0.6, strict: 0.75 };
+
+/**
+ * The same setting, applied to embedding cosines. They are a different scale
+ * from spelling distance ("enormous"/"huge" is 0.96; a spelling neighbour is
+ * lucky to reach 0.7), so the floors differ while the intent does not.
+ */
+const SEMANTIC_STRENGTH: Record<string, number> = { loose: 0.55, balanced: 0.62, strict: 0.75 };
 
 /** Below this length a spelling match is noise, not a suggestion. */
 const MIN_SPELLING_LENGTH = 4;
@@ -173,22 +192,38 @@ function prefixCandidates(word: string): string[] {
 
 const round2 = (value: number) => Number(value.toFixed(2));
 
+/** `Xenova/bge-small-en-v1.5` reads better in a stat card as `bge-small-en-v1.5`. */
+const shortModel = (model: string) => model.replace(/^[^/]+\//, '');
+
 /**
  * Nearest listed words for one flagged word, best first.
  *
+ * `semantic` is what the embedding model said (or `undefined` when it is not
+ * running): those neighbours are the model's answer, so the spelling tier — its
+ * stand-in — is skipped as soon as the model has spoken for this word.
+ *
  * Exported for the smoke test, which checks the promise this tool makes: every
- * suggestion really is on the list, and the family matches outrank the
- * spelling ones.
+ * suggestion really is on the list, whatever source it came from.
  */
 export function suggestFamiliarWords(
   rawWord: string,
-  { limit = 4, minSimilarity = STRENGTH.balanced }: { limit?: number; minSimilarity?: number } = {},
+  {
+    limit = 4,
+    minSimilarity = STRENGTH.balanced,
+    semantic,
+    semanticFloor = SEMANTIC_STRENGTH.balanced,
+  }: {
+    limit?: number;
+    minSimilarity?: number;
+    semantic?: SemanticNeighbour[];
+    semanticFloor?: number;
+  } = {},
 ): WordSuggestion[] {
   const capped = Math.max(0, Math.min(10, limit));
   const word = lettersOnly(rawWord);
   if (capped === 0 || word.length < 3) return [];
 
-  const key = `${word}|${capped}|${minSimilarity}`;
+  const key = `${word}|${capped}|${minSimilarity}|${semanticFloor}|${semantic ? semantic.length : 'none'}`;
   const cached = suggestionCache.get(key);
   if (cached) return cached;
 
@@ -201,7 +236,18 @@ export function suggestFamiliarWords(
     ranked.push({ word: form, relation, similarity: round2(similarity(word, form)) });
   }
 
-  for (const candidate of bucketFor(word.charAt(0))) {
+  if (semantic) {
+    // Never trust an external list blindly: the signal comes from another
+    // process, so anything it sends is re-checked against the list here.
+    for (const neighbour of semantic) {
+      if (neighbour.score < semanticFloor) continue;
+      if (seen.has(neighbour.word) || !DALE_CHALL_WORDS.has(neighbour.word)) continue;
+      seen.add(neighbour.word);
+      ranked.push({ word: neighbour.word, relation: 'similar meaning', similarity: round2(neighbour.score) });
+    }
+  }
+
+  for (const candidate of semantic ? [] : bucketFor(word.charAt(0))) {
     if (seen.has(candidate)) continue;
     if (candidate.length < MIN_SPELLING_LENGTH) continue;
     if (Math.abs(candidate.length - word.length) > LENGTH_WINDOW) continue;
@@ -272,13 +318,28 @@ function isCapitalised(text: string): boolean {
 function describe(word: string, suggestions: WordSuggestion[]): string {
   if (suggestions.length === 0) {
     return (
-      `“${word}” is not on the Dale–Chall list, and no word close to it is either — usually a ` +
-      `name, a technical term, or simply rarer than a fourth-grader’s vocabulary.`
+      `“${word}” is not on the Dale–Chall list, and no listed word is close to it in meaning or ` +
+      `spelling — usually a name, a technical term, or simply rarer than a fourth-grader’s vocabulary.`
     );
   }
 
-  const nearest = suggestions.map((suggestion) => `“${suggestion.word}” (${suggestion.relation})`).join(', ');
-  return `“${word}” is not on the Dale–Chall list. Nearest listed words: ${nearest}.`;
+  // Grouped rather than listed flat: "closer in meaning" and "same base word" are
+  // different kinds of advice, and the reader should not have to work out which
+  // is which from a parenthetical.
+  const quote = (list: WordSuggestion[]) => list.map((suggestion) => `“${suggestion.word}”`).join(', ');
+  const meaning = suggestions.filter((suggestion) => suggestion.relation === 'similar meaning');
+  const family = suggestions.filter((suggestion) => suggestion.relation !== 'similar meaning' && suggestion.relation !== 'close spelling');
+  const spelling = suggestions.filter((suggestion) => suggestion.relation === 'close spelling');
+
+  const parts: string[] = [];
+  if (family.length > 0) {
+    const base = family[0].relation === 'base form' ? 'its base word' : 'a shorter form of it';
+    parts.push(`${quote(family)} ${family.length === 1 ? `is ${base}` : `are related words`}`);
+  }
+  if (meaning.length > 0) parts.push(`${quote(meaning)} ${meaning.length === 1 ? 'is' : 'are'} closer in meaning`);
+  if (spelling.length > 0) parts.push(`${quote(spelling)} ${spelling.length === 1 ? 'is' : 'are'} close in spelling`);
+
+  return `“${word}” is not on the Dale–Chall list. On the list: ${parts.join('; ')}.`;
 }
 
 export const daleChallTool: Tool = {
@@ -286,12 +347,15 @@ export const daleChallTool: Tool = {
   name: 'Dale–Chall',
   description:
     'Every word outside the Dale–Chall list of familiar words, with the nearest listed words to ' +
-    'swap in. Similarity is spelling and word family, not meaning.',
+    'swap in — by meaning when the local embedding model is running, and by word family always.',
   category: 'readability',
   color: '#2f9488',
   // Off by default: it flags ~20% of the words in ordinary prose, which is the
   // point of the tool but a lot of colour to switch on for someone else.
   defaultEnabled: false,
+  // Meaning-based neighbours come from the model process. Without it the tool
+  // still works, from word family and spelling, so this is a pure upgrade.
+  requires: ['similarity'],
   options: [
     {
       kind: 'number',
@@ -313,7 +377,7 @@ export const daleChallTool: Tool = {
         { value: 'balanced', label: 'Balanced' },
         { value: 'strict', label: 'Strict' },
       ],
-      hint: 'How close a spelling must be before it is suggested. Word-family matches always qualify.',
+      hint: 'How close a suggestion must be — meaning matches included. Word-family matches always qualify.',
     },
     {
       kind: 'select',
@@ -335,11 +399,14 @@ export const daleChallTool: Tool = {
     },
   ],
 
-  run({ text, options }) {
+  run({ text, options, signals }) {
     const limit = Number(options.suggestions ?? 4);
-    const minSimilarity = STRENGTH[String(options.match ?? 'balanced')] ?? STRENGTH.balanced;
+    const strength = String(options.match ?? 'balanced');
+    const minSimilarity = STRENGTH[strength] ?? STRENGTH.balanced;
+    const semanticFloor = SEMANTIC_STRENGTH[strength] ?? SEMANTIC_STRENGTH.balanced;
     const onlyWithMatch = String(options.show ?? 'all') === 'fixable';
     const ignoreNames = Boolean(options.ignoreNames ?? false);
+    const neighbours = signals?.similarity?.words;
 
     const tokens = tokenizeWords(text);
     const sentenceStarts = ignoreNames ? sentenceInitialStarts(text, tokens) : null;
@@ -360,7 +427,12 @@ export const daleChallTool: Tool = {
         continue;
       }
 
-      const suggestions = suggestFamiliarWords(word, { limit, minSimilarity });
+      const suggestions = suggestFamiliarWords(word, {
+        limit,
+        minSimilarity,
+        semantic: neighbours?.[word],
+        semanticFloor,
+      });
       flagged += 1;
       if (suggestions.length > 0) matched.add(word);
       occurrences.set(word, (occurrences.get(word) ?? 0) + 1);
@@ -412,6 +484,15 @@ export const daleChallTool: Tool = {
         label: 'Longest',
         value: longest || '—',
         hint: longest ? `${longest.length} letters` : undefined,
+      },
+      // Which source the suggestions came from, so "no match" is never mistaken
+      // for "nothing exists" when the model is simply not running.
+      {
+        id: 'dale-chall.source',
+        label: 'Nearest words from',
+        value: signals?.similarity?.model ? shortModel(signals.similarity.model) : 'spelling only',
+        hint: signals?.similarity?.model ? 'embeddings, plus word family' : 'start the model for meaning',
+        tone: signals?.similarity?.model ? undefined : 'warn',
       },
       {
         id: 'dale-chall.list',

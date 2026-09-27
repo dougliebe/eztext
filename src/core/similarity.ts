@@ -73,3 +73,37 @@ export function commonPrefixLength(a: string, b: string): number {
   while (index < limit && a.charCodeAt(index) === b.charCodeAt(index)) index += 1;
   return index;
 }
+
+/* ------------------------------------------------------------------ */
+/* Semantic neighbours, as delivered by the local model process        */
+/* ------------------------------------------------------------------ */
+
+/** One "means something like this" neighbour of a word. */
+export interface SemanticNeighbour {
+  word: string;
+  /** Cosine similarity, 0–1. Roughly: >0.8 is a synonym, 0.62 is the floor. */
+  score: number;
+}
+
+/**
+ * Neighbours keyed by the word they describe.
+ *
+ * Keying by word rather than by document is deliberate: the embedding of a word
+ * does not depend on where it appears, so the app can accumulate these as the
+ * text changes instead of throwing them away on every keystroke, and a lookup is
+ * a plain object access.
+ */
+export interface SimilaritySignal {
+  /** The embedding model that produced these, for the UI to name. */
+  model: string;
+  words: Record<string, SemanticNeighbour[]>;
+}
+
+/** Merge fresh neighbours into what we already know; new answers win. */
+export function mergeSimilarity(
+  previous: SimilaritySignal | null,
+  next: SimilaritySignal,
+): SimilaritySignal {
+  if (!previous) return next;
+  return { model: next.model, words: { ...previous.words, ...next.words } };
+}

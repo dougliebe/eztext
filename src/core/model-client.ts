@@ -6,6 +6,7 @@
  * `fetch` against that process — there is no cloud service involved, and if the
  * process is not running these calls fail fast with a message the UI can act on.
  */
+import type { SemanticNeighbour, SimilaritySignal } from './similarity';
 import type { SurprisalScores } from './surprisal';
 
 export interface ModelHealth {
@@ -37,7 +38,9 @@ export async function checkHealth(signal?: AbortSignal): Promise<ModelHealth | n
   }
 }
 
-/** Score a document. Throws `ModelOfflineError` when the process is not running. */
+/**
+ * Score a document. Throws `ModelOfflineError` when the process is not running.
+ */
 export async function scoreText(
   text: string,
   options: { topK?: number; signal?: AbortSignal } = {},
@@ -62,4 +65,34 @@ export async function scoreText(
   }
 
   return (await response.json()) as SurprisalScores & { modelMs: number };
+}
+
+/**
+ * Nearest familiar words by meaning, for every unfamiliar word in `text`.
+ *
+ * Returns `null` rather than throwing when the process is not running: this is
+ * an *upgrade* on the spelling-based suggestions a tool can always compute, so
+ * its absence is a normal state, not an error the user needs to see.
+ */
+export async function fetchSimilarity(
+  text: string,
+  options: { k?: number; signal?: AbortSignal } = {},
+): Promise<SimilaritySignal | null> {
+  if (!text.trim()) return null;
+
+  try {
+    const response = await fetch(`${MODEL_ENDPOINT}/similarity`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, k: options.k }),
+      signal: options.signal,
+    });
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { model?: string; words?: Record<string, SemanticNeighbour[]> };
+    if (!payload.words || typeof payload.words !== 'object') return null;
+    return { model: payload.model ?? 'unknown', words: payload.words };
+  } catch {
+    return null;
+  }
 }

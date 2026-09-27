@@ -156,6 +156,7 @@ function contextAround(text: string, start: number, end: number, span = 70): str
 const RELATION_LABELS: Record<string, string> = {
   'base form': 'its base word',
   'shorter form': 'a shorter form of it',
+  'similar meaning': 'close in meaning',
   'close spelling': 'close in spelling',
 };
 

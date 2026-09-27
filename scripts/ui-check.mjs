@@ -632,10 +632,13 @@ check(
   flaggedWords.join(' '),
 );
 
-// Only a word the tool has an answer for carries the suggestions in its tooltip.
-const withSuggestions = page.locator('.hl[data-tool="dale-chall"][title*="Nearest listed words"]');
-check('flagged words carry their suggestions in the tooltip', (await withSuggestions.count()) > 0);
-await withSuggestions.first().click();
+// Word-family and meaning suggestions both land in the tooltip as detail text.
+const withDetail = page.locator('.hl[data-tool="dale-chall"][title*="is not on the"]');
+check('flagged words carry their detail in the tooltip', (await withDetail.count()) > 0);
+
+// "passage" is in the controlled sentence and is one of the words the tool has
+// an answer for; the word span is the deepest element, so this clicks the word.
+await page.locator('.hl[data-tool="dale-chall"]').filter({ hasText: 'passage' }).first().click();
 await page.waitForTimeout(250);
 
 const inspector = await page.evaluate(() => {
@@ -659,6 +662,21 @@ check(
   inspector !== null && inspector.relations.length === inspector.suggestions.length,
   inspector?.relations.join(', '),
 );
+
+// When the embedding side of the model process is up, the suggestions must be
+// the meaning-based ones — that is the point of the whole exercise.
+const embedHealth = await fetch(`${baseUrl}/api/model/health`)
+  .then((response) => (response.ok ? response.json() : null))
+  .catch(() => null);
+if (embedHealth?.embeddings) {
+  check(
+    'meaning neighbours come from the embedding model',
+    (inspector?.relations ?? []).some((relation) => /meaning/.test(relation)),
+    `${inspector?.suggestions.join(', ')} — ${inspector?.relations.join(', ')}`,
+  );
+} else {
+  console.log('\n  (skipping the embedding check — start `npm run model` with the similarity endpoint)');
+}
 
 await browser.close();
 console.log(`\n  ${failures === 0 ? 'all checks passed' : `${failures} CHECK(S) FAILED`}\n`);

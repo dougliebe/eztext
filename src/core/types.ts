@@ -9,6 +9,7 @@
  */
 
 import type { SurprisalScores } from './surprisal';
+import type { SimilaritySignal } from './similarity';
 
 /** A half-open range `[start, end)` of character offsets into the document. */
 export interface TextRange {
@@ -155,12 +156,14 @@ export type ToolOptions = Record<string, ToolOptionValue>;
  * `runAnalysis` a pure synchronous function which is what makes the smoke test
  * trivial and keeps typing from ever waiting on a model.
  */
-export type SignalId = 'surprisal';
+export type SignalId = 'surprisal' | 'similarity';
 
 export interface ToolSignals {
   surprisal?: SurprisalScores;
   /** The document the signals were computed from; tools must not trust stale data. */
   surprisalText?: string;
+  /** Word-level neighbours by meaning, accumulated across edits. */
+  similarity?: SimilaritySignal;
 }
 
 export interface ToolContext {

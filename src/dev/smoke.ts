@@ -32,6 +32,7 @@ import { contrastRatio, maxMixForContrast, mixHex, parseHex, relativeLuminance }
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 import { DALE_CHALL_WORDS } from '../core/data/dale-chall';
 import { daleChallTool, suggestFamiliarWords, type WordSuggestion } from '../tools/dale-chall.tool';
+import type { SimilaritySignal } from '../core/similarity';
 import type { AnnotationDraft } from '../core/types';
 import { SAMPLE_TEXT } from '../sample-text';
 import { tools } from '../tools';
@@ -726,7 +727,9 @@ function main(): void {
   check(
     'groups are the suggestion relations plus “no match”',
     daleChall.every((annotation) =>
-      ['base form', 'shorter form', 'close spelling', 'no match'].includes(annotation.group ?? ''),
+      ['base form', 'shorter form', 'similar meaning', 'close spelling', 'no match'].includes(
+        annotation.group ?? '',
+      ),
     ),
     [...new Set(daleChall.map((annotation) => annotation.group))].join(', '),
   );
@@ -872,6 +875,77 @@ function main(): void {
         .slice(0, 4)
         .map((annotation) => `${coveredOf(annotation)}→${suggestionsOf(annotation)[0]?.word}`)
         .join(', '),
+  );
+
+  // --- the embedding signal, driven by a stand-in so this runs without a model
+  console.log('\n  meaning suggestions (stand-in signal):');
+  const fakeSimilarity: SimilaritySignal = {
+    model: 'test/bge-stand-in',
+    words: {
+      enormous: [
+        { word: 'huge', score: 0.96 },
+        { word: 'large', score: 0.88 },
+        { word: 'notonlist', score: 0.99 },
+      ],
+      merely: [{ word: 'just', score: 0.83 }],
+      passage: [{ word: 'journey', score: 0.9 }],
+      patience: [{ word: 'hurry', score: 0.66 }],
+    },
+  };
+  const semanticRun = daleChallTool.run({ text: SAMPLE_TEXT, options: {}, signals: { similarity: fakeSimilarity } });
+  const semanticAnnotations = semanticRun.annotations ?? [];
+  const suggestionsForWord = (list: AnnotationDraft[], word: string) => {
+    const annotation = list.find((entry) => SAMPLE_TEXT.slice(entry.start, entry.end).toLowerCase() === word);
+    return ((annotation?.data?.suggestions ?? []) as WordSuggestion[]).map((s) => `${s.word}/${s.relation}`);
+  };
+  check(
+    'the signal becomes “similar meaning” suggestions',
+    suggestionsForWord(semanticAnnotations, 'enormous').includes('huge/similar meaning'),
+    suggestionsForWord(semanticAnnotations, 'enormous').join(', ') || '(none)',
+  );
+  check(
+    'the signal cannot smuggle in a word that is not on the list',
+    !suggestionsForWord(semanticAnnotations, 'enormous').some((entry) => entry.startsWith('notonlist')),
+    suggestionsForWord(semanticAnnotations, 'enormous').join(', '),
+  );
+  check(
+    'meaning replaces the spelling guess once the model has answered',
+    suggestionsForWord(semanticAnnotations, 'merely').includes('just/similar meaning') &&
+      !suggestionsForWord(semanticAnnotations, 'merely').some((entry) => entry.endsWith('/close spelling')),
+    suggestionsForWord(semanticAnnotations, 'merely').join(', '),
+  );
+  check(
+    'word family still outranks meaning',
+    suggestionsForWord(semanticAnnotations, 'passage')[0] === 'pass/base form',
+    suggestionsForWord(semanticAnnotations, 'passage').join(', '),
+  );
+  check(
+    'the panel names the model that answered',
+    semanticRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value === 'bge-stand-in',
+    String(semanticRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value),
+  );
+  check(
+    'match strength filters the meaning matches too',
+    suggestFamiliarWords('patience', {
+      semantic: fakeSimilarity.words.patience,
+      semanticFloor: 0.62,
+    }).some((suggestion) => suggestion.word === 'hurry') &&
+      !suggestFamiliarWords('patience', {
+        semantic: fakeSimilarity.words.patience,
+        semanticFloor: 0.75,
+      }).some((suggestion) => suggestion.word === 'hurry'),
+    'hurry at 0.66: kept at balanced, dropped at strict',
+  );
+  check(
+    'without the signal the panel says so',
+    daleChallRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value === 'spelling only',
+    String(daleChallRun.stats?.find((stat) => stat.id === 'dale-chall.source')?.value),
+  );
+  check(
+    'the detail sentence groups family, meaning and spelling',
+    /base word/.test(String(semanticAnnotations.find((a) => SAMPLE_TEXT.slice(a.start, a.end).toLowerCase() === 'passage')?.detail)) &&
+      /closer in meaning/.test(String(semanticAnnotations.find((a) => SAMPLE_TEXT.slice(a.start, a.end).toLowerCase() === 'passage')?.detail)),
+    String(semanticAnnotations.find((a) => SAMPLE_TEXT.slice(a.start, a.end).toLowerCase() === 'passage')?.detail),
   );
 
   console.log(`\n${RULE}\nOverlap & invariants`);

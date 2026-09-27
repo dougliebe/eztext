@@ -9,9 +9,10 @@ import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
 import { heatGradient } from './core/color';
 import { buildHeatmap, HEAT_METRICS, type HeatMetricId, type HeatMetricInfo } from './core/heatmap';
-import { checkHealth, ModelOfflineError, scoreText } from './core/model-client';
+import { checkHealth, fetchSimilarity, ModelOfflineError, scoreText } from './core/model-client';
 import { computeMetrics, describeNorm, deviationColor, EASY_PERCENTILE, formatPercentile, formatZ, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileFromZ, zScore } from './core/metrics';
 import type { SurprisalScores } from './core/surprisal';
+import { mergeSimilarity, type SimilaritySignal } from './core/similarity';
 import type { ToolSignals } from './core/types';
 import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
 import { usePersistentState } from './core/persistence';
@@ -62,6 +63,8 @@ export default function App() {
   const [scores, setScores] = useState<(SurprisalScores & { modelMs: number }) | null>(null);
   const [scoredText, setScoredText] = useState<string | null>(null);
   const [health, setHealth] = useState<{ ready: boolean; loading: boolean } | null>(null);
+  /** Word-neighbour answers from the embedding side of the model process. */
+  const [semantic, setSemantic] = useState<SimilaritySignal | null>(null);
 
   // Analysis is kept off the typing critical path: the textarea always updates
   // immediately, and React re-runs the pipeline in a transition when it can.
@@ -80,13 +83,15 @@ export default function App() {
   const freshScores = scoredText !== null && scoredText === deferredText ? scores : null;
   const isStale = scoredText !== null && scoredText !== deferredText;
 
-  const signals: ToolSignals | undefined = useMemo(
-    () =>
-      neededSignals.has('surprisal') && freshScores
-        ? { surprisal: freshScores, surprisalText: scoredText ?? undefined }
-        : undefined,
-    [neededSignals, freshScores, scoredText],
-  );
+  const signals: ToolSignals | undefined = useMemo(() => {
+    const next: ToolSignals = {};
+    if (neededSignals.has('surprisal') && freshScores) {
+      next.surprisal = freshScores;
+      next.surprisalText = scoredText ?? undefined;
+    }
+    if (neededSignals.has('similarity') && semantic) next.similarity = semantic;
+    return Object.keys(next).length > 0 ? next : undefined;
+  }, [neededSignals, freshScores, scoredText, semantic]);
 
   const analysis = useMemo(
     () => runAnalysis({ tools, text: deferredText, enabled, options, signals }),
@@ -122,6 +127,19 @@ export default function App() {
   useEffect(() => {
     void probeModel();
   }, [probeModel]);
+
+  // Semantic neighbours are an upgrade, not a mode: fetched in the background
+  // whenever an enabled tool asks for them, merged by word so editing does not
+  // throw away answers that are still true, and silently absent when the model
+  // process is not running — the tool then falls back to its own heuristics.
+  useEffect(() => {
+    if (!neededSignals.has('similarity')) return;
+    const controller = new AbortController();
+    void fetchSimilarity(deferredText, { signal: controller.signal }).then((result) => {
+      if (result) setSemantic((previous) => mergeSimilarity(previous, result));
+    });
+    return () => controller.abort();
+  }, [neededSignals, deferredText]);
 
   const doc = useMemo(() => computeMetrics(deferredText), [deferredText]);
 
