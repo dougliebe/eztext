@@ -83,8 +83,6 @@ export function Inspector({ selection, scores, modelActive, text, example, onClo
         </button>
       </header>
 
-      <p className="inspector__context">{contextAround(text, selection.start, selection.end)}</p>
-
       {word ? <WordStats word={word} /> : <p className="inspector__detail">{selection.detail ?? 'No further detail for this range.'}</p>}
 
       {contributors.length > 0 && (
@@ -295,16 +293,6 @@ function Field({ label, value, tone }: { label: string; value: string; tone?: 'w
       <span className="inspector__stat-value">{value}</span>
     </div>
   );
-}
-
-/** The selected word in a little surrounding text, so the card reads on its own. */
-function contextAround(text: string, start: number, end: number, span = 70): string {
-  const from = Math.max(0, start - span);
-  const to = Math.min(text.length, end + span);
-  const before = text.slice(from, start).replace(/\s+/g, ' ');
-  const after = text.slice(end, to).replace(/\s+/g, ' ');
-  const word = text.slice(start, end).replace(/\s+/g, ' ');
-  return `${from > 0 ? '…' : ''}${before}【${word}】${after}${to < text.length ? '…' : ''}`;
 }
 
 /** Display names for the relations a tool can attach to a suggestion. */

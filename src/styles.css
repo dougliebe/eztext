@@ -1537,15 +1537,6 @@ button {
   margin-left: auto;
 }
 
-.inspector__context {
-  margin: 6px 0 8px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--muted);
-  word-break: break-word;
-}
-
 .inspector__body {
   display: flex;
   flex-direction: column;

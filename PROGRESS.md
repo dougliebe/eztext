@@ -189,6 +189,10 @@
   offset now shows the readability detail instead of the model's answer about a word the reader is not
   being shown. Gated by a `modelActive` prop (an active tool requiring the surprisal signal) rather than
   by the scores merely existing, so a stale run cannot leak model output into a Surprisal-free workbench.
+- **The inspector's grey context quote is gone** (user request): the mono line repeating the selected word
+  with 【brackets】 and ~70 characters either side duplicated what the preview and the header already
+  show, so `contextAround` and `.inspector__context` were removed and the card now opens with the
+  header, the rule, and the tool's own output.
 - Verified the Dale-Chall work that landed in parallel still functions against the stats-only panels
   (7 stats each, 0 row lists) and that its selection card still appears.
 - **Where the model goes next**: the inspector's ranked next-token table is replaced by five five-word
