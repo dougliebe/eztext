@@ -137,6 +137,7 @@ const header = await page.evaluate(() => {
   const labels = [...document.querySelectorAll('.metric__label')].map((node) => node.textContent);
   return {
     labels,
+    percentileChips: [...document.querySelectorAll('.metric__chip')].map((node) => node.textContent),
     height: document.querySelector('.topbar').getBoundingClientRect().height,
     viewport: window.innerHeight,
   };
@@ -146,6 +147,12 @@ check(
   'topbar shows the language metrics',
   requiredMetrics.every((label) => header.labels.includes(label)),
   `${header.labels.length} metrics`,
+);
+check(
+  'each language metric carries a percentile chip',
+  header.percentileChips.length === requiredMetrics.length &&
+    header.percentileChips.every((chip) => /^(<1st|>99th|\d+(st|nd|rd|th))$/.test(chip)),
+  header.percentileChips.join(' '),
 );
 check(
   'topbar does not squeeze the workbench',
@@ -301,6 +308,51 @@ await page.locator('.heat-legend .btn').click();
 await page.waitForTimeout(150);
 heat = await heatState();
 check('the Clear button resets to tool highlighting', heat.heatSpans === 0 && heat.toolHighlights > 3);
+
+// --- 7. percentile tone bands --------------------------------------------
+// The sample text sits mid-distribution on every metric, so exercise the tails
+// with deliberately extreme documents.
+const chipsFor = async (document) => {
+  await page.fill('.input__area', document);
+  await page.waitForTimeout(400);
+  return page.evaluate(() =>
+    [...document.querySelectorAll('.metric--clickable')].map((metric) => ({
+      label: metric.querySelector('.metric__label').textContent,
+      chip: metric.querySelector('.metric__chip')?.textContent ?? null,
+      tone: metric.classList.contains('metric--warn')
+        ? 'warn'
+        : metric.classList.contains('metric--good')
+          ? 'good'
+          : 'neutral',
+    })),
+  );
+};
+
+const heavy = await chipsFor(
+  'Antidisestablishmentarianism internationalization characterization incomprehensibility. '.repeat(6),
+);
+const heavyChars = heavy.find((metric) => metric.label === 'Chars / word');
+check(
+  'very long words push chars/word into the amber band',
+  heavyChars.tone === 'warn',
+  `${heavyChars.chip} (${heavyChars.tone})`,
+);
+
+const simple = await chipsFor(
+  'The cat sat on the mat. A dog ran to the man. We can go to the sun and the sky. '.repeat(4),
+);
+const simpleChars = simple.find((metric) => metric.label === 'Chars / word');
+const simplePolys = simple.find((metric) => metric.label === '% polysyllabic');
+check(
+  'very short words push chars/word into the green band',
+  simpleChars.tone === 'good',
+  `${simpleChars.chip} (${simpleChars.tone})`,
+);
+check(
+  'a text with no long words lands in the easy tail',
+  simplePolys.tone === 'good',
+  `${simplePolys.chip} (${simplePolys.tone})`,
+);
 
 await browser.close();
 console.log(`\n  ${failures === 0 ? 'all checks passed' : `${failures} CHECK(S) FAILED`}\n`);

@@ -149,7 +149,38 @@ function summarise(values) {
   return { mean, sd: Math.sqrt(variance) };
 }
 
+/**
+ * Empirical quantiles p0…p100, by linear interpolation between closest ranks
+ * (the same convention `numpy.percentile` uses).
+ *
+ * Storing the distribution rather than assuming normality matters here: these
+ * metrics are skewed — `wordsPerSentence` runs 3.9…101.5 in this corpus — so a
+ * z-score converted through the normal CDF would report badly wrong percentiles
+ * in the tails.
+ */
+function quantiles(values, resolution = 101) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < resolution; i += 1) {
+    const at = (i / (resolution - 1)) * (sorted.length - 1);
+    const low = Math.floor(at);
+    const high = Math.ceil(at);
+    out.push(sorted[low] + (sorted[high] - sorted[low]) * (at - low));
+  }
+  return out;
+}
+
 const round = (value, digits = 4) => Number(value.toFixed(digits));
+
+/** Normal-CDF percentile from a z-score — only used to report the skew in the log. */
+function normalPercentile(z) {
+  // Abramowitz & Stegun 7.1.26 error-function approximation.
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp((-z * z) / 2);
+  const p =
+    d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return (z > 0 ? 1 - p : p) * 100;
+}
 
 /* ------------------------------------------------------------------ */
 
@@ -196,17 +227,24 @@ async function main() {
   }
 
   const n = wordCounts.length;
-  const stats = Object.fromEntries(Object.entries(ratios).map(([key, values]) => [key, summarise(values)]));
+  const stats = Object.fromEntries(
+    Object.entries(ratios).map(([key, values]) => [key, { ...summarise(values), quantiles: quantiles(values) }]),
+  );
   const words = summarise(wordCounts);
 
   console.log(`\n  ${n} excerpts used (${skipped} skipped under ${MIN_WORDS} words)\n`);
-  console.log(`  ${'metric'.padEnd(22)} ${'mean'.padStart(8)} ${'sd'.padStart(8)}  range`);
-  const ranges = Object.fromEntries(
-    Object.entries(ratios).map(([key, values]) => [key, [Math.min(...values), Math.max(...values)]]),
-  );
+  console.log(`  ${'metric'.padEnd(22)} ${'mean'.padStart(8)} ${'sd'.padStart(8)}  p10      p50      p90      skew`);
   for (const [key, value] of Object.entries(stats)) {
+    const q = value.quantiles;
+    // Empirical vs normal-CDF percentile at +1σ — a big gap means the
+    // distribution is skewed and quantiles (not z-scores) are the honest read.
+    const z = 1;
+    const empirical = q.findIndex((v) => v >= value.mean + z * value.sd);
+    const normal = normalPercentile(z);
     console.log(
-      `  ${key.padEnd(22)} ${value.mean.toFixed(4).padStart(8)} ${value.sd.toFixed(4).padStart(8)}  ${ranges[key][0].toFixed(2)} … ${ranges[key][1].toFixed(2)}`,
+      `  ${key.padEnd(22)} ${value.mean.toFixed(4).padStart(8)} ${value.sd.toFixed(4).padStart(8)}  ` +
+        `${q[10].toFixed(2).padStart(7)}  ${q[50].toFixed(2).padStart(7)}  ${q[90].toFixed(2).padStart(7)}  ` +
+        `${empirical >= 0 ? `+1σ = p${empirical} vs p${normal.toFixed(0)}` : 'n/a'}`,
     );
   }
   console.log(`  ${'words per excerpt'.padEnd(22)} ${words.mean.toFixed(1).padStart(8)} ${words.sd.toFixed(1).padStart(8)}`);
@@ -227,14 +265,25 @@ async function main() {
  *   corpus text itself is NOT redistributed here; only these aggregate
  *   statistics. Rebuilding requires downloading the corpus yourself.
  *
+ * Each metric records the mean, the sample standard deviation, and the
+ * empirical quantiles p0…p100. Percentiles come from the quantiles rather than
+ * from a normal approximation: these distributions are skewed (words per
+ * sentence spans 3.9…101.5), so converting a z-score through the normal CDF
+ * would misreport the tails.
+ *
  * Only length-normalised ratios are recorded: corpus excerpts are a roughly
  * fixed length, so comparing raw counts (words, characters) against them would
  * be meaningless.
  */
 
-export interface MetricNorm {
+export interface CorpusStat {
   mean: number;
   sd: number;
+}
+
+export interface MetricNorm extends CorpusStat {
+  /** Empirical quantiles p0…p100 — 101 ascending values. */
+  quantiles: number[];
 }
 
 export interface CorpusNorms {
@@ -244,7 +293,7 @@ export interface CorpusNorms {
   /** Excerpts that contributed, after dropping anything under 20 words. */
   n: number;
   /** Context for tooltips — the corpus is made of short excerpts. */
-  wordsPerExcerpt: MetricNorm;
+  wordsPerExcerpt: CorpusStat;
   metrics: {
     wordsPerSentence: MetricNorm;
     charactersPerWord: MetricNorm;
@@ -261,11 +310,11 @@ export const CLEAR_CORPUS: CorpusNorms = {
   n: ${n},
   wordsPerExcerpt: { mean: ${round(words.mean, 1)}, sd: ${round(words.sd, 1)} },
   metrics: {
-    wordsPerSentence: { mean: ${round(stats.wordsPerSentence.mean, 4)}, sd: ${round(stats.wordsPerSentence.sd, 4)} },
-    charactersPerWord: { mean: ${round(stats.charactersPerWord.mean, 4)}, sd: ${round(stats.charactersPerWord.sd, 4)} },
-    polysyllabicShare: { mean: ${round(stats.polysyllabicShare.mean, 4)}, sd: ${round(stats.polysyllabicShare.sd, 4)} },
-    unfamiliarShare: { mean: ${round(stats.unfamiliarShare.mean, 4)}, sd: ${round(stats.unfamiliarShare.sd, 4)} },
-    syllablesPerWord: { mean: ${round(stats.syllablesPerWord.mean, 4)}, sd: ${round(stats.syllablesPerWord.sd, 4)} },
+    wordsPerSentence: { mean: ${round(stats.wordsPerSentence.mean, 4)}, sd: ${round(stats.wordsPerSentence.sd, 4)}, quantiles: [${stats.wordsPerSentence.quantiles.map((v) => round(v, 3)).join(', ')}] },
+    charactersPerWord: { mean: ${round(stats.charactersPerWord.mean, 4)}, sd: ${round(stats.charactersPerWord.sd, 4)}, quantiles: [${stats.charactersPerWord.quantiles.map((v) => round(v, 3)).join(', ')}] },
+    polysyllabicShare: { mean: ${round(stats.polysyllabicShare.mean, 4)}, sd: ${round(stats.polysyllabicShare.sd, 4)}, quantiles: [${stats.polysyllabicShare.quantiles.map((v) => round(v, 4)).join(', ')}] },
+    unfamiliarShare: { mean: ${round(stats.unfamiliarShare.mean, 4)}, sd: ${round(stats.unfamiliarShare.sd, 4)}, quantiles: [${stats.unfamiliarShare.quantiles.map((v) => round(v, 4)).join(', ')}] },
+    syllablesPerWord: { mean: ${round(stats.syllablesPerWord.mean, 4)}, sd: ${round(stats.syllablesPerWord.sd, 4)}, quantiles: [${stats.syllablesPerWord.quantiles.map((v) => round(v, 3)).join(', ')}] },
   },
 };
 `;

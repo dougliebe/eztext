@@ -27,22 +27,60 @@ export const WORDS_PER_MINUTE = 200;
 export const MIN_COMPARABLE_WORDS = 20;
 
 /**
- * How many standard deviations a value sits from the CLEAR corpus mean.
- * Returns `null` when the comparison is meaningless (no spread in the norm).
+ * How far into the corpus distribution a value sits, as a percentile (0–100).
  *
- * All five normative metrics point the same way — higher means harder to read —
- * so a positive z is always "more difficult than the average excerpt".
+ * Read off the stored empirical quantiles by inversion rather than converted
+ * from a z-score: these metrics are skewed (words per sentence runs 3.9…101.5>
+ * across the corpus), so the normal CDF would misreport the tails — at +1σ it
+ * claims the 84th percentile where the corpus actually says 89th.
+ *
+ * Returns `null` when a comparison is not meaningful.
  */
-export function zScore(value: number, norm: MetricNorm): number | null {
-  if (!Number.isFinite(value) || !Number.isFinite(norm.mean) || !(norm.sd > 0)) return null;
-  return (value - norm.mean) / norm.sd;
+export function percentileOf(value: number, norm: MetricNorm): number | null {
+  const quantiles = norm.quantiles;
+  if (!Number.isFinite(value) || !Array.isArray(quantiles) || quantiles.length < 2) return null;
+
+  const last = quantiles.length - 1;
+  if (value <= quantiles[0]) return 0;
+  if (value >= quantiles[last]) return 100;
+
+  let low = 0;
+  let high = last;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (quantiles[mid] <= value) low = mid;
+    else high = mid;
+  }
+
+  const span = quantiles[high] - quantiles[low];
+  const fraction = span > 0 ? (value - quantiles[low]) / span : 0;
+  return ((low + fraction) / last) * 100;
 }
 
-/** Format a z-score for display: `+1.4σ`, `−0.7σ`, `±0σ`. */
-export function formatSigma(z: number): string {
-  const magnitude = Math.abs(z).toFixed(1);
-  if (magnitude === '0.0') return '\u00B10\u03C3';
-  return (z > 0 ? '+' : '\u2212') + magnitude + '\u03C3';
+/** Percentile at or above which a metric is called out as notably harder. */
+export const NOTABLE_PERCENTILE = 93;
+
+/** Percentile at or below which a metric is called out as notably easier. */
+export const EASY_PERCENTILE = 7;
+
+/** Ordinal label for a percentile: `1st`, `24th`, `92nd`, `<1st`, `>99th`. */
+export function formatPercentile(percentile: number): string {
+  if (percentile < 0.5) return '<1st';
+  if (percentile > 99.5) return '>99th';
+
+  const rounded = Math.max(1, Math.min(99, Math.round(percentile)));
+  const tens = rounded % 100;
+  if (tens >= 11 && tens <= 13) return `${rounded}th`;
+  switch (rounded % 10) {
+    case 1:
+      return `${rounded}st`;
+    case 2:
+      return `${rounded}nd`;
+    case 3:
+      return `${rounded}rd`;
+    default:
+      return `${rounded}th`;
+  }
 }
 
 /** Corpus context line for a metric tooltip, e.g. `21.3 ± 9.2 (n=4,724)`. */

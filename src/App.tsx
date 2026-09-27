@@ -9,7 +9,7 @@ import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
 import { heatGradient } from './core/color';
 import { buildHeatmap, HEAT_METRICS, type HeatMetricId, type HeatMetricInfo } from './core/heatmap';
-import { computeMetrics, describeNorm, formatSigma, MIN_COMPARABLE_WORDS, zScore } from './core/metrics';
+import { computeMetrics, describeNorm, EASY_PERCENTILE, formatPercentile, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileOf } from './core/metrics';
 import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
 import { usePersistentState } from './core/persistence';
 import { compactNumber, round } from './core/text';
@@ -358,17 +358,25 @@ function Metric({
   /** Explains the click affordance in the tooltip. */
   heatLabel?: string;
 }) {
-  const z = deviation ? zScore(deviation.raw, deviation.norm) : null;
+  const percentile = deviation ? percentileOf(deviation.raw, deviation.norm) : null;
 
-  // Tone comes from the corpus comparison, not a hardcoded threshold: the CLEAR
+  // Tone comes from the corpus percentile, not a hardcoded threshold: the CLEAR
   // corpus averages ~17.6% unfamiliar words, so an absolute "over 10% is hard"
   // rule would fire on nearly every text.
-  const resolvedTone = tone ?? (z === null ? undefined : z >= 1.5 ? 'warn' : z <= -1.5 ? 'good' : undefined);
+  const resolvedTone =
+    tone ??
+    (percentile === null
+      ? undefined
+      : percentile >= NOTABLE_PERCENTILE
+        ? 'warn'
+        : percentile <= EASY_PERCENTILE
+          ? 'good'
+          : undefined);
 
   const title = [
     hint,
-    deviation && z !== null
-      ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, percent)} → ${formatSigma(z)}, ${z >= 0 ? 'more difficult' : 'easier'} than the average excerpt.`
+    deviation && percentile !== null
+      ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, percent)} → ${formatPercentile(percentile)} percentile, ${percentile >= 50 ? 'harder' : 'easier'} than the average excerpt.`
       : null,
     onToggle ? `${active ? 'Shading the preview. Click to stop' : `Click to ${heatLabel ?? 'shade the preview'}`}.` : null,
   ]
@@ -389,7 +397,11 @@ function Metric({
       <span className="metric__label">{label}</span>
       <span className="metric__value">
         {value}
-        {z !== null && <span className="metric__sigma">{formatSigma(z)}</span>}
+        {percentile !== null && (
+          <span className="metric__chip" data-percentile={Math.round(percentile)}>
+            {formatPercentile(percentile)}
+          </span>
+        )}
       </span>
     </>
   );

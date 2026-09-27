@@ -13,11 +13,13 @@ import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap'
 import { runAnalysis } from '../core/engine';
 import {
   computeMetrics,
-  formatSigma,
+  EASY_PERCENTILE,
+  formatPercentile,
   isFamiliarWord,
   MIN_COMPARABLE_WORDS,
+  NOTABLE_PERCENTILE,
+  percentileOf,
   POLYSYLLABLE_THRESHOLD,
-  zScore,
 } from '../core/metrics';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 import { SAMPLE_TEXT } from '../sample-text';
@@ -115,9 +117,9 @@ function main(): void {
   ];
   for (const [label, value, key] of comparisons) {
     const norm = CLEAR_CORPUS.metrics[key];
-    const z = zScore(value, norm);
+    const percentile = percentileOf(value, norm);
     console.log(
-      `  ${label.padEnd(18)} ${value.toFixed(3).padStart(7)}  norm ${norm.mean.toFixed(4)} ± ${norm.sd.toFixed(4)}  ${z === null ? 'n/a' : formatSigma(z).padStart(7)}`,
+      `  ${label.padEnd(18)} ${value.toFixed(3).padStart(7)}  corpus ${norm.mean.toFixed(4)} ± ${norm.sd.toFixed(4)}  ${percentile === null ? 'n/a' : `${formatPercentile(percentile).padStart(6)} (p${percentile.toFixed(1)})`}`,
     );
   }
 
@@ -125,7 +127,13 @@ function main(): void {
   check(
     'corpus norms are populated and plausible',
     CLEAR_CORPUS.n > 4000 &&
-      normValues.every(([, norm]) => norm.sd > 0 && Number.isFinite(norm.mean)) &&
+      normValues.every(
+        ([, norm]) =>
+          norm.sd > 0 &&
+          Number.isFinite(norm.mean) &&
+          Array.isArray(norm.quantiles) &&
+          norm.quantiles.length === 101,
+      ) &&
       CLEAR_CORPUS.metrics.wordsPerSentence.mean > 10 &&
       CLEAR_CORPUS.metrics.wordsPerSentence.mean < 30 &&
       CLEAR_CORPUS.metrics.charactersPerWord.mean > 3 &&
@@ -136,29 +144,70 @@ function main(): void {
       CLEAR_CORPUS.metrics.unfamiliarShare.mean < 1 &&
       CLEAR_CORPUS.metrics.syllablesPerWord.mean > 1 &&
       CLEAR_CORPUS.metrics.syllablesPerWord.mean < 2,
-    `${normValues.length} metrics with spread`,
+    `${normValues.length} metrics with mean, sd and 101 quantiles`,
+  );
+  check(
+    'quantiles ascend and bracket the mean',
+    normValues.every(([, norm]) => {
+      const ascending = norm.quantiles.every((value, index) => index === 0 || value >= norm.quantiles[index - 1]);
+      return ascending && norm.quantiles[0] <= norm.mean && norm.mean <= norm.quantiles[100];
+    }),
+  );
+
+  // The percentile lookup must agree with the distribution it came from.
+  const medianMatches = normValues.every(([, norm]) => {
+    const atMedian = percentileOf(norm.quantiles[50], norm);
+    return atMedian !== null && Math.abs(atMedian - 50) < 0.5;
+  });
+  check('the corpus median scores as the 50th percentile', medianMatches);
+  check(
+    'percentile lookup is monotonic in value',
+    normValues.every(([, norm]) => {
+      const low = percentileOf(norm.quantiles[10], norm)!;
+      const mid = percentileOf(norm.quantiles[50], norm)!;
+      const high = percentileOf(norm.quantiles[90], norm)!;
+      return low < mid && mid < high;
+    }),
+  );
+  check(
+    'values beyond the corpus range clamp to 0 and 100',
+    normValues.every(([, norm]) =>
+      percentileOf(norm.quantiles[0] - 1, norm) === 0 && percentileOf(norm.quantiles[100] + 1, norm) === 100),
   );
   check('corpus covers real prose', CLEAR_CORPUS.wordsPerExcerpt.mean > 150 && CLEAR_CORPUS.wordsPerExcerpt.mean < 200,
     `${CLEAR_CORPUS.wordsPerExcerpt.mean} words per excerpt ± ${CLEAR_CORPUS.wordsPerExcerpt.sd}`);
 
-  const sampleZs = comparisons.map(([, value, key]) => zScore(value, CLEAR_CORPUS.metrics[key])!);
-  check('every sample deviation is finite and unremarkable', sampleZs.every((z) => Number.isFinite(z) && Math.abs(z) < 5),
-    sampleZs.map((z) => formatSigma(z)).join(' '));
+  const samplePercentiles = comparisons.map(([, value, key]) => percentileOf(value, CLEAR_CORPUS.metrics[key])!);
+  console.log(`  sample percentiles: ${samplePercentiles.map((p) => formatPercentile(p)).join(' ')}`);
   check(
-    'sample sentences are shorter than the corpus average',
-    sampleZs[0] < 0,
-    `${formatSigma(sampleZs[0])} on words/sentence`,
+    'every sample percentile is finite and inside the corpus range',
+    samplePercentiles.every((p) => Number.isFinite(p) && p >= 0 && p <= 100),
   );
   check(
-    'sample words are longer than the corpus average',
-    sampleZs[1] > 0,
-    `${formatSigma(sampleZs[1])} on chars/word`,
+    'sample sentences are shorter than the typical excerpt',
+    samplePercentiles[0] < 50,
+    `${formatPercentile(samplePercentiles[0])} on words/sentence`,
+  );
+  check(
+    'sample words are longer than the typical excerpt',
+    samplePercentiles[1] > 50,
+    `${formatPercentile(samplePercentiles[1])} on chars/word`,
   );
 
-  console.log('\n  z-score formatting:');
-  check('  +1.42 → +1.4σ', formatSigma(1.42) === '+1.4\u03C3', formatSigma(1.42));
-  check('  −0.7 → −0.7σ', formatSigma(-0.7) === '\u22120.7\u03C3', formatSigma(-0.7));
-  check('  0 → ±0σ', formatSigma(0) === '\u00B10\u03C3', formatSigma(0));
+  console.log('\n  percentile labelling:');
+  check('  1 → 1st', formatPercentile(1) === '1st', formatPercentile(1));
+  check('  2 → 2nd', formatPercentile(2) === '2nd', formatPercentile(2));
+  check('  3 → 3rd', formatPercentile(3) === '3rd', formatPercentile(3));
+  check('  11 → 11th', formatPercentile(11) === '11th', formatPercentile(11));
+  check('  24.4 → 24th', formatPercentile(24.4) === '24th', formatPercentile(24.4));
+  check('  92.6 → 93rd', formatPercentile(92.6) === '93rd', formatPercentile(92.6));
+  check('  0 → <1st', formatPercentile(0) === '<1st', formatPercentile(0));
+  check('  100 → >99th', formatPercentile(100) === '>99th', formatPercentile(100));
+  check(
+    '  notable/easy bands sit inside the tails',
+    NOTABLE_PERCENTILE > 90 && NOTABLE_PERCENTILE < 100 && EASY_PERCENTILE > 0 && EASY_PERCENTILE < 10,
+    `notable ≥ p${NOTABLE_PERCENTILE}, easy ≤ p${EASY_PERCENTILE}`,
+  );
   check(
     '  short documents are excluded from comparison',
     MIN_COMPARABLE_WORDS === 20 && computeMetrics('Too short.').words < MIN_COMPARABLE_WORDS,

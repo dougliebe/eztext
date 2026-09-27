@@ -149,7 +149,7 @@ src/
   core/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
-    metrics.ts      topbar metrics, z-scores, Dale–Chall familiarity rules
+    metrics.ts      topbar metrics, corpus percentiles, Dale–Chall rules
     heatmap.ts      click-a-metric preview shading (document-relative intensity)
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
     persistence.ts  namespaced localStorage + usePersistentState
@@ -195,16 +195,21 @@ and they are the ones with hover tooltips explaining the definition.
 | Words / sentence | `words ÷ sentences` |
 | Chars / word | Letters and digits only — punctuation, spaces and apostrophes excluded. This is the divisor ARI and Coleman–Liau use |
 | % polysyllabic | Share of words with 3+ syllables (estimated from vowel groups) |
-| % unfamiliar | Share of words outside the **Dale–Chall** list of ~3,000 familiar words. Below 5% reads as easy, above 10% as hard |
+| % unfamiliar | Share of words outside the **Dale–Chall** list of ~3,000 familiar words |
 | Syllables / word | Estimated with the same vowel-group heuristic |
 
-Thresholds are corpus-relative, not invented: each of the five ratios is shown with its deviation from the
-**CLEAR corpus** mean (`+1.4σ`), and colour appears only at ±1.5σ. All five metrics point the same way —
-higher means harder to read — so a positive σ is always "more difficult than the average excerpt".
+Each of the five ratios carries a small **percentile chip** — how far into the CLEAR corpus distribution
+your value sits. `22nd` on words/sentence means your sentences are shorter than 78% of published
+excerpts; `91st` on chars/word means your words are longer than 91% of them. Chip colour appears only in
+the tails: ≥ 93rd shows amber, ≤ 7th shows green. Hovering gives the definition plus the numbers:
 
-Hovering a metric shows the definition plus the comparison, e.g.
-`CLEAR corpus: 21.28 ± 9.23 (n=4,724) → −0.7σ, easier than the average excerpt.` Comparisons are
-suppressed entirely below 20 words, where the ratios are meaningless.
+```
+Average sentence length in words.
+
+CLEAR corpus: 21.28 ± 9.23 (n=4,724) → 22nd percentile, easier than the average excerpt.
+```
+
+Comparisons are suppressed entirely below 20 words, where the ratios are meaningless.
 
 ### Heatmaps (click a metric)
 
@@ -227,7 +232,7 @@ Two deliberate choices:
 
 - **Intensity is relative to the document, not the corpus.** The question a heatmap answers is "which
   sentences are longer *than the others here*", so the longest sentence here is always 100% hot. The
-  corpus comparison lives on the σ readouts instead. The weakest shade keeps a floor (α 0.25 for words,
+  corpus comparison lives on the percentile chips instead. The weakest shade keeps a floor (α 0.25 for words,
   0.14 for sentences) so low contributors are still visibly shaded, and whole sentences use a gentler
   range than single words because they cover far more of the page.
 - **A heatmap replaces the tool highlights** rather than layering on top of them. Two colour systems at
@@ -264,7 +269,7 @@ Syllables / word   1.4147 ± 0.1649
 
 Two things this makes obvious. First, the corpus averages **17.6% unfamiliar** words, so an absolute
 "over 10% is hard" rule (which this README previously suggested) fires on nearly everything — the
-bundled sample sits at a perfectly average `+0.3σ`. Second, CLEAR excerpts are a fixed ~174 words, so
+bundled sample sits at a perfectly ordinary `66th` percentile. Second, CLEAR excerpts are a fixed ~174 words, so
 comparing raw counts against them would be meaningless; only length-normalised ratios are recorded.
 
 **Licence:** the corpus is **CC BY-NC-SA 4.0** — non-commercial, share-alike, attribution required. Only

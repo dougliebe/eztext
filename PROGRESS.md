@@ -3,8 +3,8 @@
 ## Current status
 - Framework is complete and working: Vite + React + TypeScript SPA with a plugin-shaped tool
   registry, live analysis, overlap-aware highlighting, and a tabbed results pane.
-- Topbar shows 11 always-on document metrics; the five ratios are shown as a deviation from the CLEAR
-  corpus mean (`+1.4σ`) rather than against hardcoded thresholds.
+- Topbar shows 11 always-on document metrics; each of the five ratios carries a **percentile chip**
+  against the CLEAR corpus distribution (`91st`, `22nd`) instead of a σ readout.
 - Pushed to `origin/main`. `main` == `origin/main`, nothing outstanding.
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
@@ -51,12 +51,17 @@
   sentences / 4 paragraphs / 1,015 characters — matching the UI), ratio sanity, and 11 familiarity
   cases. `ui-check` guards topbar height (< 15% of viewport) and that the five language metrics render.
 - **Corpus norms** (`npm run corpus:norms` → `core/data/corpus-norms.ts`): mean and SD of each ratio
-  across 4,724 CLEAR excerpts, so the topbar can show `±σ` versus real published prose. The generator
+  across 4,724 CLEAR excerpts, so the topbar can show a percentile versus real published prose (σ has since been replaced). The generator
   reads the xlsx with no dependency, finds the `Excerpt` column by header text, and computes metrics by
   bundling `core/metrics.ts` itself — norms cannot drift from the implementation.
-- Replaced the invented thresholds (words/sentence > 25, % unfamiliar > 10%, …) with corpus-relative
-  tone at ±1.5σ. The old % unfamiliar rule was badly wrong: the corpus averages 17.6% unfamiliar, so
-  it fired on nearly everything. The bundled sample is only `+0.3σ` on that metric.
+- **Corpus percentiles replace σ** (`formatPercentile` / `percentileOf`): each ratio shows where it sits
+  in the corpus distribution (`91st`, `22nd`) in a small chip, with mean ± SD and n in the tooltip. The
+  generator now emits **empirical quantiles p0…p100** per metric (6 KB total) and the app inverts them by
+  binary search — no normality assumption, which matters because words/sentence spans 3.9…101.5: at +1σ
+  the normal CDF says p84 where the corpus actually says p89. Also exposes a true median (p50 = 20.25
+  words/sentence vs mean 21.28).
+- Tone bands moved from ±1.5σ to percentile tails: ≥ p93 amber, ≤ p7 green. On the sample text that
+  surfaces `chars/word 91st` (long words) while `% unfamiliar` is an unremarkable `66th`.
 - Guarded comparisons below 20 words (`MIN_COMPARABLE_WORDS`) — ratios and z-scores are meaningless on
   tiny inputs, so no σ chips render.
 - `ui-check` now fails loudly if the page renders unstyled, instead of reporting a layout catastrophe
@@ -90,7 +95,7 @@
   `Flesch-Kincaid-Grade-Level`, `New Dale-Chall Readability Formula`): the xlsx already carries them, so
   the generator could report correlations and expose any weakness in the syllable heuristic.
 - Show the corpus percentile as well as σ (a `+1.4σ` on chars/word is the 92nd percentile — more
-  intuitive for some readers).
+  intuitive for some readers).  ← done, σ removed entirely
 - Surface `% unfamiliar` / polysyllabic share in the Readability tool's stats too (single source of
   truth in `core/metrics.ts` once the tool stops computing its own).
 - Shareable permalinks (encode text + enabled tools + options into the URL hash), regex101-style.
@@ -145,10 +150,9 @@
   Intensity is relative to the document (the heatmap answers "which are longest *here*"), while the
   corpus comparison stays on the σ readouts. A heatmap also *replaces* tool highlights rather than
   mixing two colour systems.
-- **Norms are corpus-relative, thresholds are not invented**: a fixed "% unfamiliar > 10% is hard"
-  rule was silently wrong once measured — the CLEAR corpus averages 17.6%. Deviations are now ±σ against
-  a real population, with colour only past ±1.5σ. All five ratios are "higher = harder", which is what
-  lets a single signed rule drive the tone.
+- **Corpus norms: mean, SD *and* quantiles.** Percentiles are read off the stored distribution rather
+  than derived from a z-score. The generator logs the skew per metric (empirical vs normal-CDF
+  percentile at +1σ), which is how that decision got justified with numbers rather than taste.
 - **CLEAR corpus is CC BY-NC-SA 4.0** (non-commercial, share-alike, attribution). Only aggregate
   statistics are committed — never corpus text — and the generated file states the licence. If eztext is
   ever commercialised, this needs a licence review or a different reference corpus.

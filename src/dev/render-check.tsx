@@ -37,8 +37,11 @@ const checks: Array<[string, boolean]> = [
     })(),
   ],
   [
-    'corpus deviations render',
-    html.includes('\u03C3') && html.includes(CLEAR_CORPUS.name) && html.includes(`n=${CLEAR_CORPUS.n.toLocaleString('en-US')}`),
+    'corpus percentiles render',
+    html.includes('data-percentile=') &&
+      html.includes(CLEAR_CORPUS.name) &&
+      html.includes(`n=${CLEAR_CORPUS.n.toLocaleString('en-US')}`) &&
+      !html.includes('\u03C3'),
   ],
   ['preview contains resolved annotations', /data-ann="/.test(html)],
   ['preview contains layer tool ids', /data-tool="/.test(html)],

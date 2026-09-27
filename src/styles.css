@@ -229,7 +229,7 @@ button {
 
 .metric__value {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
   font-size: 13.5px;
   font-weight: 600;
@@ -237,24 +237,30 @@ button {
   color: var(--text-strong);
 }
 
-/* Deviation from the CLEAR corpus mean, e.g. −0.7σ */
-.metric__sigma {
+/* Percentile within the CLEAR corpus, e.g. 92nd */
+.metric__chip {
   font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0;
+  font-weight: 650;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-3);
   color: var(--muted);
-  opacity: 0.85;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.metric--good .metric__sigma {
+.metric--good .metric__chip {
   color: var(--good);
-  opacity: 1;
+  border-color: #56d39a55;
+  background: #56d39a1f;
 }
 
-.metric--warn .metric__sigma {
+.metric--warn .metric__chip {
   color: var(--warn);
-  opacity: 1;
+  border-color: #f0b45c55;
+  background: #f0b45c1f;
 }
 
 .metric--accent .metric__value {
