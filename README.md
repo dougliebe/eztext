@@ -135,8 +135,8 @@ inclusion in `npm run smoke` for free.
   hover and in the row title — that is where a tool says *why* it fired on this range.
 - **Shade items individually** with `AnnotationDraft.color` (any hex) and/or `AnnotationDraft.alpha` (0–1).
   Omit `alpha` and the renderer derives an opacity from the layer stacking, which is the right default for
-  overlaps; supply it to shade by magnitude. The surprisal tool uses it for a **transparent → red ramp**:
-  one hue, opacity carrying the value.
+  overlaps; supply `alpha: 1` for an opaque shade whose rendered colour is exactly the one you measured —
+  which is also what lets the same spans be composited later with `multiply` or an additive blend.
 - **Ask for external data with `requires`.** A tool that needs a model declares it, reads it from
   `ctx.signals`, and *degrades gracefully* when it is absent — return a status `Stat` rather than throwing.
   The app owns fetching it; the engine stays pure.
@@ -222,10 +222,18 @@ Switch with `MODEL=` / `MODEL_FILE=`. Measured on this machine with native ONNX 
 
 ### How it is wired
 
-- **A tool, not a view mode.** `src/tools/surprisal.tool.ts` shades one annotation per word, each on a
-  transparent → red ramp — constant hue, opacity by magnitude, which the engine carries through as
-  `AnnotationDraft.alpha`. It declares `requires: ['surprisal']`; when the scores are missing or stale it
-  returns a status card instead of annotations, so it can never shade the wrong ranges.
+- **A tool, not a view mode.** `src/tools/surprisal.tool.ts` shades one annotation per word on a
+  **paper → red ramp**: opaque `mixHex` colours from the page background to `--bad`, so the rendered shade
+  is exactly the shade that was checked for legibility. It declares `requires: ['surprisal']`; when the
+  scores are missing or stale it returns a status card instead of annotations, so it can never shade the
+  wrong ranges.
+
+  The ramp's ceiling is **derived, not chosen**. `maxMixForContrast()` in `core/color.ts` binary-searches
+  the largest mix that keeps the preview's own ink (`--text` #1b1b1b at 13px) at WCAG AA, and the answer is
+  **t = 0.645 → `#d65b5b`, 4.52:1**. The search re-runs at module load, so the cap follows the theme: a
+  darker ink buys a deeper red (`--text-strong` #000 would allow t = 0.747 → `#d04141`), and relaxing to
+  AA-large would allow `#c81e1e`. A 2.2 exponent on the curve keeps the median word around 13:1 against
+  ink, so ordinary prose stays nearly clean.
 - **Native, not WebAssembly.** Running in Node means native ONNX Runtime (several times faster than the
   browser build), no 122 MB download into your browser cache, and no `onnxruntime-web` in the app bundle.
   `@huggingface/transformers` is therefore a devDependency — it never enters `dist/`.

@@ -1,29 +1,48 @@
+import { maxMixForContrast, mixHex } from '../core/color';
 import { surprisalScale, type ScoredWord } from '../core/surprisal';
 import type { AnnotationDraft, Stat, Tool } from '../core/types';
 
 const round = (value: number, digits: number) => Number(value.toFixed(digits));
 
 /**
- * Surprisal is shaded on a transparent → red ramp: the hue is constant and the
- * *opacity* carries the magnitude, so the page stays readable and only the hard
- * words pull the eye. The red tracks `--bad` in the theme (#c00000).
+ * Surprisal is shaded with **opaque mixes from the page to red** — not alpha.
+ *
+ * Two reasons. It keeps the highlight legible by construction: the rendered
+ * colour is exactly the colour we measured, rather than a blend of red with
+ * whatever happens to be underneath. And an opaque colour composes: the same
+ * spans can later be laid over one another with `multiply` (or an additive
+ * `screen`) and the result still means something, which translucent reds would
+ * not.
+ *
+ * These must track the light theme's tokens.
  */
-const SHADE_COLOR = '#c00000';
-const SHADE_MIN_ALPHA = 0.06;
-const SHADE_MAX_ALPHA = 0.85;
+const SHADE_PAPER = '#ffffff'; // --bg-1, the pane the preview renders on
+const SHADE_TARGET = '#c00000'; // --bad
+const SHADE_INK = '#1b1b1b'; // --text, the ink the preview actually uses
+
+/** WCAG AA for body text — the preview runs at 13px. */
+const SHADE_MIN_CONTRAST = 4.5;
 
 /**
- * Opacity curve. The exponent matters more than it looks: word surprisal is
- * concentrated in the middle of its own distribution, so a linear map leaves the
- * median word ~40% red and the page still reads as a wall of colour. Bending the
- * curve keeps ordinary prose nearly clean and lets the genuinely hard words be
- * the only thing that pulls the eye.
+ * The furthest the ramp may go: ≈0.645, i.e. #d65b5b, where the ink falls to
+ * 4.52:1. Derived rather than hardcoded so it stays true if the theme's paper,
+ * red or ink changes. (Against `--text-strong` #000 the same search reaches
+ * 0.747 → #d04141; black ink would buy a deeper red if that is ever wanted.)
+ */
+const SHADE_MAX_MIX = maxMixForContrast(SHADE_PAPER, SHADE_TARGET, SHADE_INK, SHADE_MIN_CONTRAST);
+
+/**
+ * Fraction of the available ramp for a word, 0–1.
+ *
+ * The exponent matters as much as the endpoints: word surprisal clusters in the
+ * middle of its own distribution, so a linear map puts the median word halfway
+ * to the cap and the page reads as a wall of colour. Bending the curve keeps
+ * ordinary prose nearly clean and lets the hard words do the pointing.
  */
 const SHADE_EXPONENT = 2.2;
 
-/** Map a word's position on the document's scale to an opacity. */
-function shadeAlpha(scale: number): number {
-  return SHADE_MIN_ALPHA + (SHADE_MAX_ALPHA - SHADE_MIN_ALPHA) * scale ** SHADE_EXPONENT;
+function shadeColor(scale: number): string {
+  return mixHex(SHADE_PAPER, SHADE_TARGET, SHADE_MAX_MIX * scale ** SHADE_EXPONENT);
 }
 
 /**
@@ -105,10 +124,10 @@ export const surprisalTool: Tool = {
         label: cleanWord(word),
         group: word.bits >= scores.quantiles.p90 ? 'high' : word.bits >= scores.quantiles.p50 ? 'medium' : 'low',
         detail: describe(word),
-        // Transparent → red: hue fixed, opacity by magnitude. The engine hands
-        // both through, and the renderer uses `alpha` instead of guessing.
-        color: SHADE_COLOR,
-        alpha: shadeAlpha(surprisalScale(word.bits, reference)),
+        // Paper → red, opaque: the mix is the rendered colour, and `alpha: 1`
+        // tells the renderer not to blend it with anything.
+        color: shadeColor(surprisalScale(word.bits, reference)),
+        alpha: 1,
         data: { bits: word.bits, gain: word.expected?.gain ?? 0, tokenCount: word.tokenCount },
       });
     }

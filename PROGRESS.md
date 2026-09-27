@@ -105,11 +105,14 @@
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
   changed defaults reach existing sessions.
-- **Surprisal shading is a transparent → red ramp**: constant hue (`#c00000`, matching `--bad`),
-  opacity by magnitude, via a new `AnnotationDraft.alpha` the engine carries through. A 2.2 exponent on the curve
-  keeps the median word at ~0.2 opacity so ordinary prose stays clean (measured: median 0.20, only 49 of
-  163 words above 0.5) — a linear map left the page looking like a wall of colour. Hover/selected caps were
-  raised to 0.9/0.95 so boosting a strongly shaded word never makes it fainter.
+- **Surprisal shading is a paper → red mix**, opaque rather than alpha: the rendered colour is exactly the
+  colour that was checked, and opaque spans can be composited later with multiply/additive blends. The
+  ceiling is derived: `maxMixForContrast()` binary-searches the largest mix keeping the preview ink
+  (`--text` #1b1b1b at 13px) at WCAG AA — t = 0.645 → `#d65b5b`, 4.52:1. Re-derived at module load,
+  so it follows the theme (black ink would allow t = 0.747 → `#d04141`; AA-large would allow `#c81e1e`).
+  A 2.2 exponent keeps the median word ~13:1 against ink, so ordinary prose stays nearly clean.
+- Highlight rings now use `--accent` rather than the annotation's own colour: on this ramp a word with no
+  surprisal is shaded in the paper colour, so a tinted ring was invisible exactly when selecting it.
 - **Surprisal is in the toolbar** as a real tool with one annotation per word, each carrying its own
   colour from the heat ramp (`AnnotationDraft.color`). Selecting a shaded word pins an inspector
   at the top of the results pane showing the model's whole distribution at that position (probability

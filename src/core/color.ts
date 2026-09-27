@@ -42,6 +42,45 @@ export function mixHex(a: string, b: string, t: number): string {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/**
+ * WCAG relative luminance.
+ *
+ * Linearise each sRGB channel, then weight by the eye's sensitivity. Used to
+ * prove that a highlight is still legible under dark text.
+ */
+export function relativeLuminance(hex: string): number {
+  const [r, g, b] = parseHex(hex).map((channel) => {
+    const c = channel / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between any two colours, 1–21. */
+export function contrastRatio(a: string, b: string): number {
+  const [lighter, darker] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * How far a shade may travel from `base` toward `target` before `ink` drops
+ * below `minimum` contrast.
+ *
+ * Binary search rather than algebra: the sRGB transfer function makes luminance
+ * non-linear in the mix factor, so there is no closed form worth writing.
+ * `minimum` of 4.5 is WCAG AA for body text, 3.0 for large text.
+ */
+export function maxMixForContrast(base: string, target: string, ink: string, minimum = 4.5): number {
+  let safe = 0;
+  let unsafe = 1;
+  for (let i = 0; i < 40; i += 1) {
+    const mid = (safe + unsafe) / 2;
+    if (contrastRatio(mixHex(base, target, mid), ink) >= minimum) safe = mid;
+    else unsafe = mid;
+  }
+  return safe;
+}
+
 /** Cool → hot ramp used by the preview heatmaps. */
 const HEAT_STOPS: Array<[number, string]> = [
   [0, '#3f7fbf'],
@@ -79,4 +118,4 @@ export function heatGradient(): string {
   const stops = HEAT_STOPS.map(([at, color]) => `${color} ${Math.round(at * 100)}%`).join(', ');
   return `linear-gradient(90deg, ${stops})`;
 }
-
+

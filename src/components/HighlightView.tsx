@@ -86,14 +86,11 @@ function SegmentView({ segment, hoverId, selectedId, onHover, onSelect }: Segmen
     // A tool may shade an item by its own magnitude instead (surprisal does:
     // transparent to red), in which case stacking depth is not consulted.
     const baseAlpha = layer.alpha ?? (total === 1 ? 0.3 : 0.12 + 0.09 * depth);
-    // The caps sit above a tool's own range, so hovering or selecting a strongly
-    // shaded word never makes it *fainter* than it already was.
-    const alpha =
-      state === 'selected'
-        ? Math.min(baseAlpha + 0.34, 0.95)
-        : state === 'hover'
-          ? Math.min(baseAlpha + 0.2, 0.9)
-          : baseAlpha;
+    // Capped at fully opaque, never above: a tool that supplies its own colour at
+    // `alpha: 1` has already been contrast-checked, and the feedback for hover
+    // and selection is the ink change and the ring below, not a lighter wash.
+    const boost = state === 'selected' ? 0.34 : state === 'hover' ? 0.2 : 0;
+    const alpha = Math.min(baseAlpha + boost, 1);
 
     const style: CSSProperties = {
       backgroundColor: withAlpha(layer.color, alpha),
@@ -111,7 +108,11 @@ function SegmentView({ segment, hoverId, selectedId, onHover, onSelect }: Segmen
     }
 
     if (state !== 'none') {
-      style.boxShadow = `0 0 0 1px ${withAlpha(layer.color, 0.9)}`;
+      // Ringed in the accent, not in the annotation's own colour: on this ramp a
+      // word with no surprisal is shaded in the paper colour, so a tinted ring
+      // would be invisible exactly when the user is trying to select it.
+      style.boxShadow =
+        state === 'selected' ? '0 0 0 2px var(--accent)' : '0 0 0 1px var(--accent)';
     }
 
     content = (

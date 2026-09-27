@@ -27,7 +27,7 @@ import {
   SATURATED_Z,
   zScore,
 } from '../core/metrics';
-import { parseHex } from '../core/color';
+import { contrastRatio, maxMixForContrast, mixHex, parseHex, relativeLuminance } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 import { SAMPLE_TEXT } from '../sample-text';
 import { tools } from '../tools';
@@ -244,15 +244,9 @@ function main(): void {
 
   console.log('\n  deviation colour ramp:');
   const channel = (hex: string, index: number) => parseHex(hex)[index];
-  // WCAG relative luminance, for the contrast guard below.
-  const luminance = (hex: string) => {
-    const linear = parseHex(hex).map((value) => {
-      const c = value / 255;
-      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-  };
-  const contrastOnPaper = (hex: string) => 1.05 / (luminance(hex) + 0.05);
+  // WCAG contrast, shared with the surprisal ramp (core/color.ts).
+  const contrastOnPaper = (hex: string) => contrastRatio(hex, "#ffffff");
+
 
   // The ramp's exact hexes are theme values, so they are asserted as properties
   // instead — how the middle and the ends should behave — plus the one thing the
@@ -488,7 +482,6 @@ function main(): void {
   );
 
   console.log(`\n${RULE}\nSurprisal tool`);
-
   const toolText = 'A B C D';
   const toolIds = [0, 1, 2, 3];
   const toolPieces = ['A', ' B', ' C', ' D'];
@@ -532,17 +525,60 @@ function main(): void {
     `${annotations.length} annotations covering ${annotations.map((a) => `"${a.label}"`).join(' ')}`,
   );
   check(
-    'every annotation is shaded on one red hue',
-    annotations.every((annotation) => annotation.color === '#c00000'),
-    [...new Set(annotations.map((a) => a.color))].join(' '),
+    'every annotation is shaded on the paper → red ramp',
+    annotations.every((annotation) => {
+      const [r, g, b] = parseHex(annotation.color!);
+      // A mix of #ffffff toward #c00000: green and blue stay equal and fall
+      // together while red stays high.
+      return g === b && r >= 192 && g <= 255;
+    }) && new Set(annotations.map((a) => a.color)).size > 1,
+    annotations.map((a) => `${a.label}=${a.color}`).join(' '),
   );
   check(
-    'opacity carries the magnitude: the surprising word is the most opaque',
-    // Range only loosely asserted — the floor and cap are tuning knobs; what
-    // must hold is that opacity is monotonic in surprisal and never zero.
-    annotations.every((annotation) => typeof annotation.alpha === 'number' && annotation.alpha > 0 && annotation.alpha <= 0.9) &&
-      annotations[2].alpha! > Math.max(annotations[0].alpha!, annotations[1].alpha!, annotations[3].alpha!),
-    annotations.map((a) => `${a.label}=${a.alpha!.toFixed(2)}`).join(' '),
+    'shading is opaque, so the rendered colour is the one we measured',
+    annotations.every((annotation) => annotation.alpha === 1),
+    annotations.map((a) => `${a.label}=${a.alpha}`).join(' '),
+  );
+  check(
+    'the hardest word is the darkest, and the easiest is the palest',
+    relativeLuminance(annotations[2].color!) < Math.min(relativeLuminance(annotations[0].color!), relativeLuminance(annotations[1].color!), relativeLuminance(annotations[3].color!)),
+    annotations.map((a) => `${a.label} L=${relativeLuminance(a.color!).toFixed(3)}`).join(' '),
+  );
+
+  // The requirement that set the ramp's ceiling: dark ink stays legible.
+  const darkest = annotations.reduce((worst, annotation) =>
+    relativeLuminance(annotation.color!) < relativeLuminance(worst.color!) ? annotation : worst,
+  );
+  const contrast = contrastRatio(darkest.color!, '#1b1b1b');
+  check(
+    'the darkest shade still clears WCAG AA under the preview ink',
+    contrast >= 4.5,
+    `${darkest.color} vs #1b1b1b = ${contrast.toFixed(2)}:1`,
+  );
+
+  console.log('\n  contrast helpers:');
+  check('  white on black is 21:1', Math.abs(contrastRatio('#ffffff', '#000000') - 21) < 0.01, contrastRatio('#ffffff', '#000000').toFixed(3));
+  check(
+    '  the preview ink on paper matches the theme',
+    Math.abs(contrastRatio('#ffffff', '#1b1b1b') - 17.22) < 0.02,
+    `${contrastRatio('#ffffff', '#1b1b1b').toFixed(2)}:1`,
+  );
+  check(
+    '  the cap lands where the ink reaches 4.5:1',
+    // Binary search must sit just inside the limit: below it by a hair at the
+    // cap, above it one step further on.
+    contrastRatio(mixHex('#ffffff', '#c00000', maxMixForContrast('#ffffff', '#c00000', '#1b1b1b')), '#1b1b1b') >= 4.5 &&
+      contrastRatio(mixHex('#ffffff', '#c00000', maxMixForContrast('#ffffff', '#c00000', '#1b1b1b') + 0.02), '#1b1b1b') < 4.5,
+    `cap = ${maxMixForContrast('#ffffff', '#c00000', '#1b1b1b').toFixed(4)} → ${mixHex('#ffffff', '#c00000', maxMixForContrast('#ffffff', '#c00000', '#1b1b1b'))}`,
+  );
+  check(
+    '  a stricter minimum gives a shallower cap',
+    maxMixForContrast('#ffffff', '#c00000', '#1b1b1b', 7) < maxMixForContrast('#ffffff', '#c00000', '#1b1b1b', 4.5),
+    `7:1 → ${maxMixForContrast('#ffffff', '#c00000', '#1b1b1b', 7).toFixed(3)}, 4.5:1 → ${maxMixForContrast('#ffffff', '#c00000', '#1b1b1b', 4.5).toFixed(3)}`,
+  );
+  check(
+    '  luminance is monotonic in the mix',
+    [0, 0.25, 0.5, 0.75, 1].map((t) => relativeLuminance(mixHex('#ffffff', '#c00000', t))).every((value, index, all) => index === 0 || value < all[index - 1]),
   );
   check(
     'the detail names the word the model expected',

@@ -465,34 +465,54 @@ if (!health?.ready) {
   const shaded = await page.locator('.hl[data-tool="surprisal"]').count();
   check('running shades every word', shaded > 20, `${shaded} shaded words`);
 
-  // The ramp is transparent → red: one hue, opacity carrying the magnitude.
+  // The ramp runs from the page background to red: opaque mixes, so the colour
+  // that lands on screen is the colour that was contrast-checked.
   const ramp = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('.hl[data-tool="surprisal"]')].map((node) => {
-      const parts = (getComputedStyle(node).backgroundColor.match(/[\d.]+/g) ?? []).map(Number);
-      return { hue: parts.slice(0, 3).join(','), alpha: parts[3] ?? 1 };
+      const style = getComputedStyle(node).backgroundColor;
+      const parts = (style.match(/[\d.]+/g) ?? []).map(Number);
+      return { style, channels: parts.slice(0, 3), alpha: parts[3] ?? 1 };
     });
-    const alphas = rows.map((row) => row.alpha);
-    const median = [...alphas].sort((a, b) => a - b)[Math.floor(alphas.length / 2)];
+    const luminance = (rgb) => {
+      const [r, g, b] = rgb.map((channel) => {
+        const c = channel / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a, b) => {
+      const [lighter, darker] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const ink = [27, 27, 27]; // --text, the preview's resting ink
+    const luminances = rows.map((row) => luminance(row.channels));
+    const ratios = rows.map((row) => contrast(row.channels, ink));
+    const sorted = [...ratios].sort((a, b) => a - b);
     return {
-      hues: [...new Set(rows.map((row) => row.hue))],
-      minAlpha: Math.min(...alphas),
-      maxAlpha: Math.max(...alphas),
-      median,
-      steps: new Set(alphas.map((alpha) => alpha.toFixed(2))).size,
-      heavy: alphas.filter((alpha) => alpha > 0.5).length,
-      words: alphas.length,
+      words: rows.length,
+      opaque: rows.every((row) => row.alpha === 1),
+      mixes: rows.every((row) => row.channels[1] === row.channels[2] && row.channels[0] >= 192),
+      steps: new Set(rows.map((row) => row.style)).size,
+      darkest: rows[luminances.indexOf(Math.min(...luminances))].style,
+      worstRatio: sorted[0],
+      medianRatio: sorted[Math.floor(sorted.length / 2)],
+      heavy: ratios.filter((ratio) => ratio < 7).length,
+      // The same ink on bare paper, for reference.
+      paperRatio: contrast([255, 255, 255], ink),
     };
   });
-  check('shading is a single red hue', ramp.hues.length === 1 && ramp.hues[0] === '192,0,0', ramp.hues.join(' '));
+
+  check('shading is an opaque paper-to-red mix', ramp.opaque && ramp.mixes, `${ramp.words} words, ${ramp.steps} distinct shades`);
+  check('the ramp has many steps', ramp.steps > 6, `${ramp.steps} distinct rendered colours`);
   check(
-    'opacity carries the magnitude',
-    ramp.maxAlpha > 0.6 && ramp.minAlpha < 0.15 && ramp.steps > 5,
-    `alpha ${ramp.minAlpha.toFixed(2)}…${ramp.maxAlpha.toFixed(2)} across ${ramp.steps} steps`,
+    'every shade keeps the preview ink legible (WCAG AA)',
+    ramp.worstRatio >= 4.5,
+    `worst ${ramp.worstRatio.toFixed(2)}:1 on ${ramp.darkest} (bare paper is ${ramp.paperRatio.toFixed(1)}:1)`,
   );
   check(
-    'the page stays light: most words are faintly shaded',
-    ramp.median < 0.4 && ramp.heavy < ramp.words / 2,
-    `median ${ramp.median.toFixed(2)}, ${ramp.heavy} of ${ramp.words} words above 0.5`,
+    'the page stays light: the median word barely tints the paper',
+    ramp.medianRatio > ramp.paperRatio * 0.75,
+    `median ${ramp.medianRatio.toFixed(2)}:1 vs paper ${ramp.paperRatio.toFixed(2)}:1`,
   );
   check(
     'the surprisal panel reports model statistics',
