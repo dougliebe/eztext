@@ -1751,6 +1751,10 @@ button {
   margin: 0;
   padding: 0;
   list-style: none;
+  /* Only as wide as the longest row, so the value column sits just past the
+     labels instead of at the far edge of the pane. */
+  width: fit-content;
+  max-width: 100%;
 }
 
 .selection__contributor-list li {
@@ -1763,6 +1767,10 @@ button {
   border-bottom: 1px dotted var(--dash);
 }
 
+.selection__contributor-list li > span:first-child {
+  min-width: 0;
+}
+
 .selection__contributor-words {
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -1772,6 +1780,7 @@ button {
 .selection__contributor-value {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* The canonical fix for this kind of annotation, shown under the rule. */
