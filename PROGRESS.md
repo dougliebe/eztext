@@ -15,7 +15,9 @@
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass (62 assertions in the browser, 151 in smoke).
 
 ## In progress
-- Nothing.
+- **GSDS Stage 1 is implemented and verified** on `feat/gsds-tool` (worktree `D:/ANALYTICS/eztext-gsds`).
+  Remaining: a windowed score for documents past ~200 words (currently an amber hint), and optionally a
+  POS tagger from the local model process to replace the suffix heuristics for variables 2–4 and 10.
 
 ## Completed
 - Project scaffold: Vite 5, React 18, strict TS, dark-theme design tokens, `dev`/`build`/`preview`/`typecheck`/`smoke` scripts.
@@ -235,8 +237,45 @@ the top of the results pane when something in the preview is selected).
 - `SelectionCard` is renamed `Inspector` (classes `.inspector*`) so the code says what we call it.
 - ui-check now returns to the Stats tab after its tab loop: the JSON tab *replaces* the panels, so
   assertions after that point were finding none.
+- **Golub Syntactic Density Score** (`core/gsds.ts` + `core/syntax.ts` + `tools/gsds.tool.ts`):
+  the ten published variables, weights, `Total = Σ weight × frequency`, `SDS = Total ÷ T-units` and the
+  grade conversion. Formula checked against ED091741's worked example with no heuristics in the loop
+  (`scoreGsds`); sample tally pinned at 163 words / 16 T-units / SDS 1.70. Five variables are
+  closed-class counts; variables 1–4 share the T-unit/clause heuristics; variable 10 is the original
+  program's suffix proxy. `Be / have` is an option (formula auxiliary-only vs the 1974 program's
+  all-forms, since the paper measured the gap). The length dependence (Belanger 1978) is surfaced as an
+  amber hint past 400 words. Smoke pins the known relative-clause over-capture rather than hiding it.
+  Full audit: `docs/gsds-feasibility.md`.
+- **Highlight renderer shows tint only** (user request): the stacked per-layer underlines are gone.
+  Each nested layer still washes its own translucent background, and the washes compound on overlap,
+  so depth remains visible without any decoration under the text.
+- **Inspector no longer covers the panels** (user report): it was a `position: sticky` panel inside
+  the scrolling results body, and a tall one (373px on the GSDS dense view, in a ~140px pane) stacked
+  over the content and made both unreadable. It is now a bounded region between the tab bar and the
+  scrolling panels (`pane__inspector`, `max-height: min(60%, 340px)`, internal scroll), so it still
+  stays put but cannot overlap.
+- **GSDS now highlights density, not tokens** (user request): the default view ranks T-units by their
+  exact share of the weighted total — `core/gsds.ts` computes a per-unit decomposition whose shares sum
+  back to the published contributions, which smoke verifies to 1e-9 — shades the top quarter with a
+  graded alpha, and the inspector lists the contributors (`30 words = 1.78`, `2 time adverbs = 1.20`, …)
+  under the canonical fix. The counted words inside each shaded unit are highlighted with one hue per
+  feature group (six hues, smoke asserts they are distinct and each AA-legible over the region's wash),
+  so the sentence shows its time adverbs, modals and so on instead of only counting them; the inspector
+  names them too (`2 time adverbs — while, before`). The audit view keeps every counted feature for
+  hand-checking the tally. The three highlight checkboxes are gone; the options are view / top% /
+  show-words / be-have.
+- **Every tool explains its groups** (`ToolResult.summary` + `groupDescriptions` + `groupExamples`):
+  the results panel renders one general line above the stats and a per-group “what this means / what to
+  do / one canonical fix” list below them, and the selection inspector shows the fix example for
+  whatever was clicked. GSDS states that density is not an error; Readability and
+  Surprisal got descriptions too (Surprisal has no examples — its alternatives table is the fix).
+  Smoke fails if a group has no explanation or if examples cover only some of a tool's groups; the
+  render check asserts the explanations reach the page.
 
 ## Next steps
+- GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long
+  documents get a comparable number instead of only the amber caveat.
+- Optional: POS tagging from the local model process to firm up variables 2–4 and 10.
 - Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded
   word) — the data is already in the tool's annotations as `data.gain`.
 - Surprisal windows arrive all at once; streaming them per window would give progress on long documents.
@@ -312,9 +351,10 @@ the top of the results pane when something in the preview is selected).
 - **Overlap model**: `buildSegments` partitions the document into maximal constant-layer segments
   (sweep line, O(n log n)). Layering rule: widest annotation at the bottom (structural context),
   narrowest on top (the specific match), ties broken by registry order then position.
-- **Overlap rendering**: one nested `<span>` per covering layer — outermost gets the background tint,
-  each layer adds its own `text-underline-offset`, so overlaps read as stacked underlines without
-  any CSS blending tricks.
+- **Overlap rendering**: one nested `<span>` per covering layer — each layer gets a translucent
+  background wash and the washes compound where layers overlap, so depth reads as a deeper tint with
+  no CSS blending tricks. Underlines were removed at the user's request; the tint carries the depth
+  instead of a decoration under the text.
 - **Performance**: `runAnalysis` is a pure `useMemo` fed by `useDeferredValue(text)`, so typing never
   blocks on analysis.
 - **Layout contract**: a splitter is the only thing that sizes a pane. The controlled side is
@@ -368,5 +408,10 @@ the top of the results pane when something in the preview is selected).
   `.models/` — verified by loading with remote fetches disabled — and no API is involved. bge-small's
   original weights are MIT (the ONNX conversion repo states no licence), and GPT-2 is MIT, so unlike the
   CC BY-NC-SA CLEAR corpus these carry no non-commercial constraint.
+- **GSDS mirrors the published instrument where it documented its rules** — the `-ing`/`-ed`/`-en`
+  proxy for verbals, `for` after a comma as a coordinator, time adverbs and subordinators counted in
+  both variables — rather than "fixing" them, so scores stay comparable to the published norms. The
+  two places the sources disagree (be/have auxiliary vs all forms; the length-bound formula) are an
+  option and a caveat, never a silent choice.
 
 _Last updated: 2026-09-27_

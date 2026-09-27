@@ -8,6 +8,8 @@ interface InspectorProps {
   /** Live model scores, for the alternatives; absent when the text is unscored. */
   scores: SurprisalScores | null;
   text: string;
+  /** Canonical before → after example for the selected annotation's group. */
+  example?: string;
   onClose: () => void;
 }
 
@@ -19,7 +21,7 @@ interface InspectorProps {
  * distribution the model had at that position — the point of the surprisal tool
  * is not the number, it is *what else the word could have been*.
  */
-export function Inspector({ selection, scores, text, onClose }: InspectorProps) {
+export function Inspector({ selection, scores, text, example, onClose }: InspectorProps) {
   // Before the early return: hooks cannot come and go with the selection.
   const continuations = useContinuation(text, selection, scores !== null);
   if (!selection) return null;
@@ -27,6 +29,20 @@ export function Inspector({ selection, scores, text, onClose }: InspectorProps) 
   const word = scores?.words.find((candidate) => candidate.start === selection.start) ?? null;
   const bits = typeof selection.data?.bits === 'number' ? selection.data.bits : null;
   const suggestions = readSuggestions(selection.data);
+
+  // Optional per-annotation breakdown (GSDS dense units): the weighted shares
+  // that make this range dense, biggest first, with the words that earned them.
+  const contributors = Array.isArray(selection.data?.contributors)
+    ? (
+        selection.data.contributors as Array<{ label?: unknown; value?: unknown; words?: unknown }>
+      ).flatMap((entry) => {
+        if (!entry || typeof entry.label !== 'string' || typeof entry.value !== 'number') return [];
+        const words = Array.isArray(entry.words)
+          ? entry.words.filter((word): word is string => typeof word === 'string')
+          : [];
+        return [{ label: entry.label, value: entry.value, words }];
+      })
+    : [];
 
   return (
     <section className="inspector" aria-label="Inspector">
@@ -54,6 +70,32 @@ export function Inspector({ selection, scores, text, onClose }: InspectorProps) 
       <p className="inspector__context">{contextAround(text, selection.start, selection.end)}</p>
 
       {word ? <WordStats word={word} /> : <p className="inspector__detail">{selection.detail ?? 'No further detail for this range.'}</p>}
+
+      {contributors.length > 0 && (
+        <div className="inspector__contributors">
+          <span className="inspector__contributors-label">What makes it dense</span>
+          <ul className="inspector__contributor-list">
+            {contributors.map((entry) => (
+              <li key={entry.label}>
+                <span>
+                  {entry.label}
+                  {entry.words.length > 0 && (
+                    <span className="inspector__contributor-words"> — {entry.words.join(', ')}</span>
+                  )}
+                </span>
+                <span className="inspector__contributor-value">{entry.value.toFixed(2)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {example && (
+        <p className="inspector__example">
+          <span className="inspector__example-label">Example fix</span>
+          <span>{example}</span>
+        </p>
+      )}
 
       <Continuations
         rows={continuations.rows}

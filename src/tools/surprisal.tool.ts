@@ -65,6 +65,18 @@ function shadeColor(scale: number): string {
   return mixHex(SHADE_PAPER, SHADE_TARGET, SHADE_MAX_MIX * scale ** SHADE_EXPONENT);
 }
 
+const SUMMARY =
+  'Surprisal is how many bits the model needed to predict each word — a close proxy for reading ' +
+  'effort. High-surprisal words are where a plainer word or a clearer setup pays off.';
+
+const GROUP_DESCRIPTIONS: Record<string, string> = {
+  high:
+    'The hardest tenth of the words in this document. These cost the reader the most; consider a ' +
+    'plainer word or giving the idea more setup.',
+  medium: 'Mid-frequency words: predictable enough to skim, still carrying information.',
+  low: 'Words the model expected. They keep the sentence moving without asking the reader for effort.',
+};
+
 /**
  * Language-model surprisal.
  *
@@ -126,6 +138,8 @@ export const surprisalTool: Tool = {
             tone: 'warn',
           },
         ],
+        summary: SUMMARY,
+        groupDescriptions: GROUP_DESCRIPTIONS,
       };
     }
 
@@ -196,7 +210,7 @@ export const surprisalTool: Tool = {
       },
     ];
 
-    return { annotations, stats };
+    return { annotations, stats, summary: SUMMARY, groupDescriptions: GROUP_DESCRIPTIONS };
 
     function cleanWord(word: ScoredWord): string {
       return word.text.trim();

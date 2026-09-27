@@ -117,6 +117,27 @@ export interface ToolResult {
   annotations?: AnnotationDraft[];
   stats?: Stat[];
   notes?: Note[];
+  /**
+   * One or two general sentences rendered above the stats: what this tool's
+   * numbers mean and which direction is denser or easier. Run-specific
+   * diagnostics belong in `notes` instead.
+   */
+  summary?: string;
+  /**
+   * One general explanation per annotation `group`, rendered once beside the
+   * group filters. The per-annotation `detail` says why *this* range fired;
+   * this says what the category means and what a writer usually does about it,
+   * so a reader is never left with unexplained highlights.
+   */
+  groupDescriptions?: Record<string, string>;
+  /**
+   * One short, canonical before → after example per `group`, shown in the
+   * selection inspector under the selected annotation. Keep it generic — the
+   * shape of the fix, not a rewrite of the user's own text. Omit it for groups
+   * that are purely descriptive (surprisal's severity bands already show what
+   * the model expected), but supply all of them when any is supplied.
+   */
+  groupExamples?: Record<string, string>;
 }
 
 /* ------------------------------------------------------------------ */

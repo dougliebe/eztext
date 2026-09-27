@@ -401,6 +401,66 @@ await page.waitForTimeout(150);
 heat = await heatState();
 check('the Clear button resets to tool highlighting', heat.heatSpans === 0 && heat.toolHighlights > 3);
 
+// --- 6b. the selection inspector explains the flagged group --------------
+// `gsds#0` is the densest dense unit (the tool emits its units first, ranked),
+// selected by dispatching the click rather than hit-testing: a token highlight
+// or another tool's span can sit on top of the region at any point, so a real
+// click would sometimes land on a different annotation.
+await page.evaluate(() =>
+  document.querySelector('[data-ann="gsds#0"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+);
+await page.waitForSelector('.inspector', { timeout: 5000 });
+const gsdsInspector = await page.evaluate(() => ({
+  tool: document.querySelector('.inspector__eyebrow')?.textContent ?? '',
+  detail: document.querySelector('.inspector__detail')?.textContent ?? '',
+  example: document.querySelector('.inspector__example')?.textContent ?? '',
+  contributors: document.querySelectorAll('.inspector__contributor-list li').length,
+}));
+check('the inspector names the rule that fired', gsdsInspector.detail.length > 0, gsdsInspector.detail.slice(0, 90));
+check('the inspector shows a fix example', gsdsInspector.example.includes('→'), gsdsInspector.example.slice(0, 110));
+check('the inspector breaks a dense unit into its shares', gsdsInspector.contributors > 0, `${gsdsInspector.contributors} contributors`);
+
+// Regression: the inspector used to be a sticky overlay inside the scrolling
+// results body, so a tall one covered the content. It is a bounded region above
+// the scrolling panels now, scrolling internally instead of stacking.
+const inspectorGeometry = await page.evaluate(() => {
+  const pane = document.querySelector('.pane__inspector');
+  const body = document.querySelector('.pane--results .pane__body');
+  const paneBox = pane.getBoundingClientRect();
+  const bodyBox = body.getBoundingClientRect();
+  return {
+    overlap: Math.round(paneBox.bottom - bodyBox.top),
+    inspectorHeight: Math.round(paneBox.height),
+    bodyHeight: Math.round(bodyBox.height),
+    scrollable: pane.scrollHeight > pane.clientHeight,
+    position: getComputedStyle(document.querySelector('.inspector')).position,
+  };
+});
+// The splitter is parked at 79.5% here, so the results pane is at its smallest;
+// any visible panels are enough, what matters is that the inspector never covers
+// them.
+check(
+  'the inspector does not cover the results panels',
+  inspectorGeometry.overlap <= 0 && inspectorGeometry.bodyHeight > 0 && inspectorGeometry.position !== 'sticky',
+  `inspector ${inspectorGeometry.inspectorHeight}px, panels ${inspectorGeometry.bodyHeight}px, overlap ${inspectorGeometry.overlap}px`,
+);
+check(
+  'a tall inspector scrolls internally',
+  inspectorGeometry.scrollable,
+  `${inspectorGeometry.inspectorHeight}px capped, content overflows`,
+);
+await page.locator('.inspector__close').click();
+await page.waitForTimeout(100);
+
+// Which annotation wins a preview click is the topmost layer at that point, so
+// this only asserts that the click opens the inspector at all.
+await page.locator('.hl[data-tool="gsds"]').first().click({ force: true, position: { x: 4, y: 4 } });
+await page.waitForSelector('.inspector', { timeout: 5000 });
+const opened = await page.evaluate(() => document.querySelector('.inspector__eyebrow')?.textContent ?? '');
+check('clicking a highlight opens the inspector', opened.length > 0, opened || 'none');
+await page.locator('.inspector__close').click();
+await page.waitForTimeout(100);
+
 // --- 7. percentile tone bands --------------------------------------------
 // The sample text sits mid-distribution on every metric, so exercise the tails
 // with deliberately extreme documents.

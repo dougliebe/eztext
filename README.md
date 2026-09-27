@@ -8,7 +8,7 @@ Type or paste text at the top, toggle tools in the toolbar, and read the results
 ┌─ topbar ──────────────── document metrics ─────────────────────────────┐
 ├─ toolbar ── [Readability] Readability · … your tools here ─────────┤
 │                          ⚙ opens that tool's settings                  │├─ input (editable) ───────────┬─ preview (annotated, hoverable) ─────────┤
-│                              │  tint + stacked underlines per layer    │
+│                              │  tint per layer, darker on overlap      │
 │                              ├─ coverage strip: one track per tool ────┤
 ├────────────── draggable splitter ──────────────────────────────────────┤
 │ stats │ JSON   —  per-tool panels, machine output                     │
@@ -55,9 +55,9 @@ The two contracts that make this work:
   id, and the covered text, clamps ranges to the document, and drops empty ones.
 - **`Segment`** — a maximal run of text whose covering annotations never change, with `layers` ordered
   widest → narrowest. Segments tile the document exactly once, so overlap rendering becomes trivial:
-  nest one `<span>` per layer, give the outermost a background tint, and give every layer its own
-  underline offset. That is how a verb inside a flagged sentence reads as one tint plus two stacked
-  underlines.
+  nest one `<span>` per layer and give each a translucent background wash. The washes compound where
+  layers overlap, so a verb inside a flagged sentence reads as a deeper tint — highlighting only, with
+  nothing drawn under the text.
 
 Layering order is deterministic: widest annotation at the bottom, then registry order, then position.
 
@@ -109,6 +109,9 @@ export const echoTool: Tool = {
       stats: [
         { id: 'echo.count', label: 'Echoes', value: annotations.length, tone: 'accent' },
       ],
+      summary: 'Higher counts mean more back-to-back repetition.',
+      groupDescriptions: { echo: 'Two identical words in a row — a stutter or a typo.' },
+      groupExamples: { echo: '“the the plan” → “the plan”' },
     };
   },
 };
@@ -121,8 +124,9 @@ export const tools: Tool[] = [readabilityTool, echoTool];
 ```
 
 That's the whole cost of a new extension. You get a toolbar chip, a settings popover, per-tool stats,
-group filters, a result list, coverage tracks, JSON export, hover/click syncing with the preview, and
-inclusion in `npm run smoke` for free.
+a summary and per-group explanations with one canonical fix example each, group filters, a result
+list, coverage tracks, JSON export, hover/click syncing with the preview, and inclusion in
+`npm run smoke` for free.
 
 ### Rules of thumb
 
@@ -132,8 +136,12 @@ inclusion in `npm run smoke` for free.
 - **Overlap freely.** Do not try to coordinate with other tools; layering is the engine's job.
 - **Use `group`** for sub-categories. `"long"`, `"complex"`, `"auxiliary"` — they become filter chips
   and the per-row tag.
-- **Explain inside `detail`, not in a footnote.** Every annotation carries a `detail` string shown on
-  hover and in the row title — that is where a tool says *why* it fired on this range.
+- **Explain inside `detail`, and explain the category once.** Every annotation carries a `detail`
+  string shown on hover and in the row title — that is where a tool says *why* it fired on this range.
+  The optional `summary`, `groupDescriptions` and `groupExamples` fields say what the tool's numbers
+  mean, what each group is for, and one canonical before → after fix. The results panel renders the
+  descriptions, and the selection inspector shows the example for whatever was clicked. `npm run
+  smoke` fails if a group has no description, or if examples cover only some of a tool's groups.
 - **Shade items individually** with `AnnotationDraft.color` (any hex) and/or `AnnotationDraft.alpha` (0–1).
   Omit `alpha` and the renderer derives an opacity from the layer stacking, which is the right default for
   overlaps; supply `alpha: 1` for an opaque shade whose rendered colour is exactly the one you measured —
@@ -149,6 +157,7 @@ inclusion in `npm run smoke` for free.
 | **Readability** | Long sentences and complex words overlapping, so it exercises the layering | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word, complex-word share |
 | **Common words** | Every word outside the words most readers know, and for each one the common words to swap in, with p(known) for each | unfamiliar/distinct counts, how many have a match, most flagged, longest, list size, which source answered |
 | **Surprisal** | Every word shaded transparent → red by how many bits the language model needed to predict it | mean bits/token, perplexity, hardest words, top-decile count, model name |
+| **Syntactic density** | The densest T-units shaded, with the counted words inside them colour-coded by kind and a click-through breakdown of each unit's weighted shares (audit view highlights every counted feature) | SDS, grade equivalent, weighted total, densest T-unit, and every frequency with its weight and contribution |
 
 Suggestions come from two places and both are about meaning, never spelling resemblance:
 
@@ -181,6 +190,8 @@ src/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
     metrics.ts      topbar metrics, z-scores + CDF percentiles, common-word rules
+    gsds.ts         Golub Syntactic Density Score: lexicons, detection, weights, grade conversion
+    syntax.ts       T-units, subordinate clauses, verb-ish tests (shared by structure tools)
     surprisal.ts    language-model surprisal: logits → per-word bits, perturbation gains
     heatmap.ts      click-a-metric preview shading (document-relative intensity)
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
@@ -405,10 +416,12 @@ surfaces and most of what we talk about lives in a specific one.
 - **Run model** in the input pane's bar scores the document with the local language model (see *Surprisal*).
 - **Topbar metric** (the five ratios) shades the preview by that metric — click again to clear.
 - **Hover** a highlight or a coverage block → the same annotation lights up everywhere.
-- **Click** a highlight in the preview (or a coverage block) → the **inspector** pins to the top of the
-  results pane showing the selected text in context, the word's own numbers, and — with the model running —
-  the five phrases it would write *from that word onwards* (see *Where the model goes next*). **Click the
-  same thing again to deselect.**
+- **Click** a highlight in the preview (or a coverage block) → the **inspector** pins above the results
+  pane showing the selected text in context, the rule that fired, an example fix, and (for dense GSDS
+  units) the weighted shares behind the range. With the model running it also shows the word's own
+  numbers and the five phrases it would write *from that word onwards* (see *Where the model goes next*).
+  **Click the same thing again to deselect.** A tall inspector is bounded and scrolls internally rather
+  than covering the panels.
 - The results pane carries **statistics per tool**, not a row per annotation: a thousand rows of
   "the = 1.2 bits" is noise, and annotations are browsable where they are. The `JSON` tab still has the
   full set for export.
@@ -593,6 +606,60 @@ word flagged in ordinary prose was `is`, and at 2.2 the list was `is`, `when`, `
 the exemption, 2.0 flags `nevertheless` and `prose`, which is the kind of answer the number is for.
 
 
+## Golub Syntactic Density Score
+
+The **Syntactic density** tool implements Golub's (1973) score: ten weighted syntax features summed and
+divided by the number of T-units (`Total = Σ weight × frequency`, `SDS = Total ÷ T-units`, then the
+published linear grade conversion).
+
+| # | Variable | Weight | Extraction |
+| --- | --- | --- | --- |
+| 1 | Words / T-unit | 0.95 | word tokenizer + T-unit splitter |
+| 2 | Subordinate clauses / T-unit | 0.90 | subordinator/relative list + verb lookahead |
+| 3 | Main clause word length | 0.20 | T-unit words minus merged clause spans |
+| 4 | Subordinate clause word length | 0.50 | merged clause spans |
+| 5 | Modals | 0.65 | closed list, token match |
+| 6 | Be / have in the auxiliary position | 0.40 | closed list + next-word test |
+| 7 | Prepositional phrases | 0.75 | closed list, local disambiguation |
+| 8 | Possessives | 0.70 | pronoun list + apostrophe orthography |
+| 9 | Adverbs of time | 0.60 | closed list, counted by form (as the instrument did) |
+| 10 | Gerunds, participles, absolutes | 0.85 | the original program's suffix proxy |
+
+Variables 5–9 are closed-class lookups and behave like real counts. Variables 1–4 all depend on one
+component — T-unit and subordinate-clause segmentation in `core/syntax.ts` — and variable 10 reproduces
+the 1974 program's rule (a >6-letter `-ing`/`-ed`/`-en` word with no be/have in the preceding three
+words), which the paper itself called only "predominantly accurate". Every annotation therefore carries
+the rule that fired, and the stats carry each variable's weight and weighted contribution, so the score
+is auditable rather than oracular.
+
+The default **dense view** answers the question a density score naturally raises: *where* is the prose
+packed hardest, and why. `core/gsds.ts` attributes every part of the weighted total to the T-unit that
+owns it (`units`), so each T-unit has an exact share; the tool shades the top quarter, darkest first,
+and clicking one lists its contributors — `30 words = 1.78`, `2 time adverbs — while, before = 1.20`,
+`23 subordinate-clause words = 0.88` … — which sum back to that unit's share of the published total.
+The counted words inside those regions are highlighted too, one hue per feature group, so the number
+in the inspector can be found in the sentence; nothing outside the dense regions is highlighted. The
+**audit view** flips to highlighting every counted feature, so the frequencies can be checked by hand
+against the rules above.
+
+Two properties of the instrument are surfaced instead of hidden:
+
+- **Be/have has two published readings.** The hand formula counts only the auxiliary position; the 1974
+  program counted *every* form and scored higher — ED090304 measured r = .96 against hand scoring and
+  named the difference. The tool's `Be / have` option switches between them and reports both counts.
+- **The literal score is sample-length dependent.** Variables 1–4 enter as rates, then the whole sum is
+  divided by T-units again, so the score falls as a document grows at constant syntax density
+  (Belanger 1978). The instrument was normed on ~200-word samples; the tool turns the stat amber past
+  400 words and says so in the hint rather than presenting the raw number as comparable.
+
+`npm run smoke` checks the formula against the published worked example (ED091741: 203 words, 16 T-units,
+frequencies `12.7, .87, 8.2, 6.3, 5, 5, 18, 4, 3, 2` → Total 42.62 → SDS 2.7 → grade 4.0) before any
+heuristic runs, then pins the sample document's tally (163 words, 16 T-units, SDS 1.70) and the T-unit
+decisions (coordination splits, verb-phrase coordination does not, lists do not).
+
+Sources: Golub (1973), ED091741; Kidder & Golub (1974), ED090304; O'Neal et al. (1983), ED237558.
+The extraction audit and the staged plan are in `docs/gsds-feasibility.md`.
+
 ## Layout rules
 
 Pane sizes are owned by the splitters, never by content. Concretely:
@@ -615,6 +682,10 @@ already moved. `npm run ui-check` exists to catch exactly that.
 
 - English-only heuristics; no POS tagger, so words that are both nouns and verbs (`walk`, `plan`)
   are always counted as verbs, and rare verbs are missed.
+- The GSDS clause variables (1–4) inherit that limit: an unpunctuated relative clause is over-captured
+  by the span rule, and a list item containing a relative clause can be mistaken for a coordinated
+  clause. Variable 10 counts participial adjectives. Each annotation names its rule; the smoke test
+  pins the known over-capture rather than pretending it away.
 - Analysis runs on every keystroke for the whole document. Fine to ~100 KB; beyond that a worker
   and/or debounce is the next step.
 - No shareable permalinks yet (only `localStorage`).

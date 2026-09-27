@@ -1180,6 +1180,71 @@ button {
   padding: 10px;
 }
 
+.tool-panel__summary {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Per-group explanations: what each flagged category means and what to do
+   about it, once per panel rather than repeated on every row. */
+.group-notes {
+  padding: 6px 9px;
+  border: 1px dashed var(--dash);
+  background: var(--bg-0);
+}
+
+.group-notes > summary {
+  cursor: pointer;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-dim);
+  user-select: none;
+}
+
+.group-notes > summary:hover {
+  color: var(--text);
+}
+
+.group-notes dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 7px 0 0;
+}
+
+.group-notes__row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.group-notes__row dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.group-notes__row dd {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.group-notes__example {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted-dim);
+}
 
 .notes {
   display: flex;
@@ -1414,15 +1479,19 @@ button {
 }
 
 /* ==========================================================================
-   Selection inspector (pinned above the results)
+   Selection inspector (bounded, above the results)
    ========================================================================== */
 
+/* The inspector is its own bounded region above the list, not an overlay. A
+   tall inspector (shares + example) used to sit on top of the scrolling rows
+   and make both unreadable; it scrolls internally instead. */
+.pane__inspector {
+  flex: 0 0 auto;
+  max-height: min(60%, 340px);
+  overflow: auto;
+}
+
 .inspector {
-  position: sticky;
-  top: 0;
-  /* Above the row list's own sticky column head (z-index 2): they overlap when
-     the list is scrolled, and the inspector must win. */
-  z-index: 3;
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
   padding: 8px 12px 10px;
@@ -1526,6 +1595,83 @@ button {
   padding: 0 3px;
   border: 1px solid var(--border);
   background: var(--bg-1);
+}
+
+/* Per-unit score decomposition: which weighted shares make this range dense. */
+.inspector__contributors {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.inspector__contributors-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.inspector__contributor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Only as wide as the longest row, so the value column sits just past the
+     labels instead of at the far edge of the pane. */
+  width: fit-content;
+  max-width: 100%;
+}
+
+.inspector__contributor-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+  border-bottom: 1px dotted var(--dash);
+}
+
+.inspector__contributor-list li > span:first-child {
+  min-width: 0;
+}
+
+.inspector__contributor-words {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.inspector__contributor-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The canonical fix for this kind of annotation, shown under the rule. */
+.inspector__example {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 9px;
+  border-left: 2px solid var(--accent);
+  background: var(--band);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.inspector__example-label {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 
 .inspector__hint {

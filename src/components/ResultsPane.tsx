@@ -16,7 +16,7 @@ interface ResultsPaneProps {
   analysis: AnalysisRun;
   tab: TabId;
   onTabChange: (tab: TabId) => void;
-  /** Selection inspector, pinned above the tab content. */
+  /** Selection inspector, rendered above the scrolling tab content. */
   selection?: React.ReactNode;
 }
 
@@ -71,8 +71,9 @@ export function ResultsPane({
         </span>
       </header>
 
+      {selection && <div className="pane__inspector">{selection}</div>}
+
       <div className="pane__body">
-        {selection}
         {activeTools.length === 0 ? (
           <div className="empty">
             <p className="empty__title">No tools enabled</p>

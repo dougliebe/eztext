@@ -61,6 +61,8 @@ const checks: Array<[string, boolean]> = [
     'a panel renders per enabled tool',
     (html.match(/tool-panel__name/g)?.length ?? 0) === tools.filter((tool) => tool.defaultEnabled !== false).length,
   ],
+  ['group explanations render', html.includes('group-notes') && html.includes('What these groups mean')],
+  ['tool summaries render', html.includes('tool-panel__summary')],
   ['no unresolved template markers', !html.includes('undefined') && !html.includes('NaN')],
 ];
 

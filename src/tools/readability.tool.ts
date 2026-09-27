@@ -133,6 +133,28 @@ export const readabilityTool: Tool = {
       },
     ];
 
-    return { annotations: [...longAnnotations, ...complexAnnotations], stats };
+    return {
+      annotations: [...longAnnotations, ...complexAnnotations],
+      stats,
+      summary:
+        'Higher scores mean easier text. The two groups are the things every formula here punishes: ' +
+        'long words and long sentences.',
+      groupDescriptions: {
+        complex:
+          'A word of three or more syllables that is not a stopword. Long words raise every formula ' +
+          'here; a shorter synonym or unpacking the idea is the usual fix.',
+        'long-sentence':
+          'A sentence over the word threshold. Length is not automatically bad — long sentences often ' +
+          'carry the argument — but they are where readers lose the thread. Splitting at a clause ' +
+          'boundary usually helps.',
+      },
+      groupExamples: {
+        complex: '“utilize, demonstrate, facilitate” → “use, show, help”',
+        'long-sentence':
+          '“The report, which the team finished after several delays, was published because the editor ' +
+          'liked it.” → “The team finished the report after several delays. The editor liked it, so it ' +
+          'was published.”',
+      },
+    };
   },
 };
