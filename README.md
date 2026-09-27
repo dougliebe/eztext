@@ -133,8 +133,10 @@ inclusion in `npm run smoke` for free.
   and the per-row tag.
 - **Explain inside `detail`, not in a footnote.** Every annotation carries a `detail` string shown on
   hover and in the row title — that is where a tool says *why* it fired on this range.
-- **Shade items individually** with `AnnotationDraft.color` (any hex). Omit it and every match gets the
-  tool's single `color`. The surprisal tool uses this to put each word on a gradient.
+- **Shade items individually** with `AnnotationDraft.color` (any hex) and/or `AnnotationDraft.alpha` (0–1).
+  Omit `alpha` and the renderer derives an opacity from the layer stacking, which is the right default for
+  overlaps; supply it to shade by magnitude. The surprisal tool uses it for a **transparent → red ramp**:
+  one hue, opacity carrying the value.
 - **Ask for external data with `requires`.** A tool that needs a model declares it, reads it from
   `ctx.signals`, and *degrades gracefully* when it is absent — return a status `Stat` rather than throwing.
   The app owns fetching it; the engine stays pure.
@@ -144,7 +146,7 @@ inclusion in `npm run smoke` for free.
 | Tool | What it shows | Stats it produces |
 | --- | --- | --- |
 | **Readability** | Long sentences and complex words overlapping, so it exercises the layering | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word, complex-word share |
-| **Surprisal** | Every word shaded by how many bits the language model needed to predict it | mean bits/token, perplexity, hardest words, top-decile count, model name |
+| **Surprisal** | Every word shaded transparent → red by how many bits the language model needed to predict it | mean bits/token, perplexity, hardest words, top-decile count, model name |
 
 Earlier revisions shipped Sentences, Verbs and Repeated-words tools as worked examples of the contract.
 They were removed because they were demonstrations rather than things worth reading with — the recipe
@@ -220,10 +222,10 @@ Switch with `MODEL=` / `MODEL_FILE=`. Measured on this machine with native ONNX 
 
 ### How it is wired
 
-- **A tool, not a view mode.** `src/tools/surprisal.tool.ts` shades one annotation per word — each with
-  its *own* colour from the heat ramp, which the engine honours via `AnnotationDraft.color`. It declares
-  `requires: ['surprisal']`; when the scores are missing or stale it returns a status card instead of
-  annotations, so it can never shade the wrong ranges.
+- **A tool, not a view mode.** `src/tools/surprisal.tool.ts` shades one annotation per word, each on a
+  transparent → red ramp — constant hue, opacity by magnitude, which the engine carries through as
+  `AnnotationDraft.alpha`. It declares `requires: ['surprisal']`; when the scores are missing or stale it
+  returns a status card instead of annotations, so it can never shade the wrong ranges.
 - **Native, not WebAssembly.** Running in Node means native ONNX Runtime (several times faster than the
   browser build), no 122 MB download into your browser cache, and no `onnxruntime-web` in the app bundle.
   `@huggingface/transformers` is therefore a devDependency — it never enters `dist/`.

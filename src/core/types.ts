@@ -43,6 +43,13 @@ export interface AnnotationDraft extends TextRange {
    * than giving every match the same hue. Must be a hex colour.
    */
   color?: string;
+  /**
+   * Opacity for this annotation, 0–1. Omit it and the renderer derives one from
+   * the layer stacking (so a tool that says nothing still gets sensible
+   * overlaps). Supply it to shade items by magnitude — surprisal goes from
+   * transparent to red this way, with the hue held constant.
+   */
+  alpha?: number;
   data?: Record<string, unknown>;
 }
 
@@ -180,6 +187,8 @@ export interface Tool {
 /** An annotation enriched with presentation data by the engine. */
 export interface ResolvedAnnotation extends Annotation {
   color: string;
+  /** Tool-supplied opacity; absent when the renderer should pick one. */
+  alpha?: number;
   toolName: string;
   /** Position of the owning tool in the registry, used for deterministic layering. */
   toolIndex: number;

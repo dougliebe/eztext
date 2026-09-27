@@ -275,10 +275,14 @@ export function groupIntoWords(tokens: ScoredToken[], text: string): ScoredWord[
 }
 
 /**
- * Shading for the preview: 0–1, clipped at the document's own p90 so a single
- * outlier word does not flatten everything else into the lightest shade.
+ * Where a word sits on the document's own surprisal scale, 0–1, clipped at the
+ * reference (the corpus of comparison is the text in front of you, not the
+ * language at large).
+ *
+ * Deliberately a raw ratio with no floor: the renderer turns it into opacity, and
+ * "no surprise at all" should mean "no shade at all".
  */
-export function surprisalIntensity(bits: number, reference: number): number {
+export function surprisalScale(bits: number, reference: number): number {
   if (!(reference > 0)) return 0;
   return Math.max(0, Math.min(1, bits / reference));
 }

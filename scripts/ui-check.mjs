@@ -464,6 +464,36 @@ if (!health?.ready) {
 
   const shaded = await page.locator('.hl[data-tool="surprisal"]').count();
   check('running shades every word', shaded > 20, `${shaded} shaded words`);
+
+  // The ramp is transparent → red: one hue, opacity carrying the magnitude.
+  const ramp = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.hl[data-tool="surprisal"]')].map((node) => {
+      const parts = (getComputedStyle(node).backgroundColor.match(/[\d.]+/g) ?? []).map(Number);
+      return { hue: parts.slice(0, 3).join(','), alpha: parts[3] ?? 1 };
+    });
+    const alphas = rows.map((row) => row.alpha);
+    const median = [...alphas].sort((a, b) => a - b)[Math.floor(alphas.length / 2)];
+    return {
+      hues: [...new Set(rows.map((row) => row.hue))],
+      minAlpha: Math.min(...alphas),
+      maxAlpha: Math.max(...alphas),
+      median,
+      steps: new Set(alphas.map((alpha) => alpha.toFixed(2))).size,
+      heavy: alphas.filter((alpha) => alpha > 0.5).length,
+      words: alphas.length,
+    };
+  });
+  check('shading is a single red hue', ramp.hues.length === 1 && ramp.hues[0] === '192,0,0', ramp.hues.join(' '));
+  check(
+    'opacity carries the magnitude',
+    ramp.maxAlpha > 0.6 && ramp.minAlpha < 0.15 && ramp.steps > 5,
+    `alpha ${ramp.minAlpha.toFixed(2)}…${ramp.maxAlpha.toFixed(2)} across ${ramp.steps} steps`,
+  );
+  check(
+    'the page stays light: most words are faintly shaded',
+    ramp.median < 0.4 && ramp.heavy < ramp.words / 2,
+    `median ${ramp.median.toFixed(2)}, ${ramp.heavy} of ${ramp.words} words above 0.5`,
+  );
   check(
     'the surprisal panel reports model statistics',
     (await page.locator('.tool-panel', { hasText: 'Surprisal' }).locator('.stat').count()) >= 6,

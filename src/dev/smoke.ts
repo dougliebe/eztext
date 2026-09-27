@@ -10,7 +10,7 @@
  *   3. layers inside a segment are ordered widest → narrowest.
  */
 import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
-import { scoreWindow, summarise, surprisalIntensity } from '../core/surprisal';
+import { scoreWindow, summarise, surprisalScale } from '../core/surprisal';
 import { surprisalTool } from '../tools/surprisal.tool';
 import { runAnalysis } from '../core/engine';
 import {
@@ -480,11 +480,11 @@ function main(): void {
   );
   check(
     'intensity is clamped and scales linearly',
-    surprisalIntensity(0, 10) === 0 &&
-      Math.abs(surprisalIntensity(5, 10) - 0.5) < 1e-9 &&
-      surprisalIntensity(10, 10) === 1 &&
-      surprisalIntensity(999, 10) === 1 &&
-      surprisalIntensity(5, 0) === 0,
+    surprisalScale(0, 10) === 0 &&
+      Math.abs(surprisalScale(5, 10) - 0.5) < 1e-9 &&
+      surprisalScale(10, 10) === 1 &&
+      surprisalScale(999, 10) === 1 &&
+      surprisalScale(5, 0) === 0,
   );
 
   console.log(`\n${RULE}\nSurprisal tool`);
@@ -532,17 +532,17 @@ function main(): void {
     `${annotations.length} annotations covering ${annotations.map((a) => `"${a.label}"`).join(' ')}`,
   );
   check(
-    'each annotation carries its own gradient colour',
-    annotations.every((annotation) => /^#[0-9a-f]{6}$/.test(annotation.color ?? '')) &&
-      new Set(annotations.map((annotation) => annotation.color)).size > 1,
+    'every annotation is shaded on one red hue',
+    annotations.every((annotation) => annotation.color === '#c00000'),
     [...new Set(annotations.map((a) => a.color))].join(' '),
   );
   check(
-    'the surprising word is shaded hotter than the expected one',
-    // " C" costs ~11.5 bits, " D" ~0 — compare their ramp positions by luminance.
-    parseHex(annotations[2].color!).reduce((sum, v) => sum + v, 0) >
-      parseHex(annotations[3].color!).reduce((sum, v) => sum + v, 0),
-    `" C"=${annotations[2].color} vs " D"=${annotations[3].color}`,
+    'opacity carries the magnitude: the surprising word is the most opaque',
+    // Range only loosely asserted — the floor and cap are tuning knobs; what
+    // must hold is that opacity is monotonic in surprisal and never zero.
+    annotations.every((annotation) => typeof annotation.alpha === 'number' && annotation.alpha > 0 && annotation.alpha <= 0.9) &&
+      annotations[2].alpha! > Math.max(annotations[0].alpha!, annotations[1].alpha!, annotations[3].alpha!),
+    annotations.map((a) => `${a.label}=${a.alpha!.toFixed(2)}`).join(' '),
   );
   check(
     'the detail names the word the model expected',
@@ -573,10 +573,10 @@ function main(): void {
     signals: { surprisal: scoredAll, surprisalText: toolText },
   });
   check(
-    'the engine keeps per-annotation colours',
+    'the engine carries per-annotation colours and opacities',
     withTool.annotations.length === 4 &&
-      withTool.annotations.every((annotation) => annotation.color !== surprisalTool.color),
-    `${withTool.annotations.length} annotations, tool colour ${surprisalTool.color}`,
+      withTool.annotations.every((annotation) => annotation.color !== surprisalTool.color && annotation.alpha !== undefined),
+    `${withTool.annotations.length} annotations, tool colour ${surprisalTool.color}, opacities ${withTool.annotations.map((a) => a.alpha?.toFixed(2)).join(' ')}`,
   );
   const withoutSignals = runAnalysis({
     tools: [surprisalTool],

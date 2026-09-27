@@ -82,12 +82,17 @@ function SegmentView({ segment, hoverId, selectedId, onHover, onSelect }: Segmen
     // Light paper needs a stronger wash than a dark pane did: the tint has to
     // stay readable over white, and the widest (structural) layer must remain
     // visible even when two narrower layers stack on top of it.
-    const baseAlpha = total === 1 ? 0.3 : 0.12 + 0.09 * depth;
+    //
+    // A tool may shade an item by its own magnitude instead (surprisal does:
+    // transparent to red), in which case stacking depth is not consulted.
+    const baseAlpha = layer.alpha ?? (total === 1 ? 0.3 : 0.12 + 0.09 * depth);
+    // The caps sit above a tool's own range, so hovering or selecting a strongly
+    // shaded word never makes it *fainter* than it already was.
     const alpha =
       state === 'selected'
-        ? Math.min(baseAlpha + 0.34, 0.78)
+        ? Math.min(baseAlpha + 0.34, 0.95)
         : state === 'hover'
-          ? Math.min(baseAlpha + 0.2, 0.62)
+          ? Math.min(baseAlpha + 0.2, 0.9)
           : baseAlpha;
 
     const style: CSSProperties = {

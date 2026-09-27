@@ -1,8 +1,30 @@
-import { heatHex } from '../core/color';
-import { surprisalIntensity, type ScoredWord } from '../core/surprisal';
+import { surprisalScale, type ScoredWord } from '../core/surprisal';
 import type { AnnotationDraft, Stat, Tool } from '../core/types';
 
 const round = (value: number, digits: number) => Number(value.toFixed(digits));
+
+/**
+ * Surprisal is shaded on a transparent → red ramp: the hue is constant and the
+ * *opacity* carries the magnitude, so the page stays readable and only the hard
+ * words pull the eye. The red tracks `--bad` in the theme (#c00000).
+ */
+const SHADE_COLOR = '#c00000';
+const SHADE_MIN_ALPHA = 0.06;
+const SHADE_MAX_ALPHA = 0.85;
+
+/**
+ * Opacity curve. The exponent matters more than it looks: word surprisal is
+ * concentrated in the middle of its own distribution, so a linear map leaves the
+ * median word ~40% red and the page still reads as a wall of colour. Bending the
+ * curve keeps ordinary prose nearly clean and lets the genuinely hard words be
+ * the only thing that pulls the eye.
+ */
+const SHADE_EXPONENT = 2.2;
+
+/** Map a word's position on the document's scale to an opacity. */
+function shadeAlpha(scale: number): number {
+  return SHADE_MIN_ALPHA + (SHADE_MAX_ALPHA - SHADE_MIN_ALPHA) * scale ** SHADE_EXPONENT;
+}
 
 /**
  * Language-model surprisal.
@@ -83,8 +105,10 @@ export const surprisalTool: Tool = {
         label: cleanWord(word),
         group: word.bits >= scores.quantiles.p90 ? 'high' : word.bits >= scores.quantiles.p50 ? 'medium' : 'low',
         detail: describe(word),
-        // Gradient: this word's own surprisal, not one colour for the tool.
-        color: heatHex(surprisalIntensity(word.bits, reference)),
+        // Transparent → red: hue fixed, opacity by magnitude. The engine hands
+        // both through, and the renderer uses `alpha` instead of guessing.
+        color: SHADE_COLOR,
+        alpha: shadeAlpha(surprisalScale(word.bits, reference)),
         data: { bits: word.bits, gain: word.expected?.gain ?? 0, tokenCount: word.tokenCount },
       });
     }

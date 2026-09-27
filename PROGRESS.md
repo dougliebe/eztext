@@ -105,6 +105,11 @@
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
   changed defaults reach existing sessions.
+- **Surprisal shading is a transparent → red ramp**: constant hue (`#c00000`, matching `--bad`),
+  opacity by magnitude, via a new `AnnotationDraft.alpha` the engine carries through. A 2.2 exponent on the curve
+  keeps the median word at ~0.2 opacity so ordinary prose stays clean (measured: median 0.20, only 49 of
+  163 words above 0.5) — a linear map left the page looking like a wall of colour. Hover/selected caps were
+  raised to 0.9/0.95 so boosting a strongly shaded word never makes it fainter.
 - **Surprisal is in the toolbar** as a real tool with one annotation per word, each carrying its own
   colour from the heat ramp (`AnnotationDraft.color`). Selecting a shaded word pins an inspector
   at the top of the results pane showing the model's whole distribution at that position (probability
