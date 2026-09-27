@@ -8,16 +8,20 @@
 - The **Common words tool** is in: it flags exactly what `% unfamiliar` counts and, when a flagged word
   is selected, names the nearest common words — by meaning while the local model is running, by word
   family always. The list is the ~24,600 words most US readers know, so ordinary prose is usually clean.
+- The **GSDS tool** (Golub Syntactic Density Score) is in: it ranks the densest T-units, decomposes each
+  score into the published variables with the words that earned them, and shows a canonical fix per group.
+  `feat/gsds-tool` was merged into `main` (`90f3cb4`, resolved against the common-words/model line) and
+  the inspector tool-gating fix rebased on top.
 - Selecting a word now shows **where the model goes next**: five five-word phrases, each from a different
   one of the model's likeliest next pieces (`POST /continue`). The ranked next-token table it replaced
   answered "what word did I miss"; the phrases answer "where is this sentence heading".
-- `main` is **1 commit ahead of `origin/main`** at the time of writing, plus the work below, not yet pushed.
-- `npm run build`, `npm run smoke` and `npm run ui-check` all pass (62 assertions in the browser, 151 in smoke).
+- `main` carries the common-words/model work, the GSDS merge and the inspector gating fix; pushed to
+  `origin/main` in this session.
+- `npm run build`, `npm run smoke` (217 assertions) and `npm run ui-check` (76 assertions in the browser)
+  all pass on the merged tree.
 
 ## In progress
-- **GSDS Stage 1 is implemented and verified** on `feat/gsds-tool` (worktree `D:/ANALYTICS/eztext-gsds`).
-  Remaining: a windowed score for documents past ~200 words (currently an amber hint), and optionally a
-  POS tagger from the local model process to replace the suffix heuristics for variables 2–4 and 10.
+- Nothing.
 
 ## Completed
 - Project scaffold: Vite 5, React 18, strict TS, dark-theme design tokens, `dev`/`build`/`preview`/`typecheck`/`smoke` scripts.
@@ -276,6 +280,12 @@ the top of the results pane when something in the preview is selected).
   Surprisal got descriptions too (Surprisal has no examples — its alternatives table is the fix).
   Smoke fails if a group has no explanation or if examples cover only some of a tool's groups; the
   render check asserts the explanations reach the page.
+- **GSDS merged into `main`** (`90f3cb4`, parents `d0c44b6` and `f50d4c0`): the dense-sentence work —
+  `core/gsds.ts`, `core/syntax.ts`, `tools/gsds.tool.ts`, the density-first highlight view, group
+  explanations/examples and the tint-only renderer — now sits on the same line as the common-words and
+  model work. Verified on the merged tree (typecheck, build, 217 smoke assertions), then the inspector
+  tool-gating fix was rebased on top and verified again with the full browser check (76 assertions,
+  model process running).
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long
