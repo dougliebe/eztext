@@ -64,11 +64,19 @@ export const NOTABLE_PERCENTILE = 93;
 /** Percentile at or below which a metric is called out as notably easier. */
 export const EASY_PERCENTILE = 7;
 
-/** Ramp endpoints for percentile labels — green (easy) through to red (hard). */
-const PERCENTILE_COOL = '#56d39a';
-const PERCENTILE_NEUTRAL = '#8592a3';
-const PERCENTILE_WARM = '#f0b45c';
-const PERCENTILE_HOT = '#f2767c';
+/**
+ * Ramp endpoints for percentile labels — green (easy) through to red (hard).
+ *
+ * These are the app's semantic colours (--good, --muted, --warn, --bad) mixed
+ * down to where they can be read as 9px text on white paper. They must track
+ * those tokens: the dark theme used pale mint/amber/rose values here, and those
+ * are illegible as text once the ground turns light. smoke.ts asserts the whole
+ * ramp keeps WCAG AA contrast against the paper background.
+ */
+const PERCENTILE_COOL = '#0a7a0a';
+const PERCENTILE_NEUTRAL = '#6b6b63';
+const PERCENTILE_WARM = '#8a5a00';
+const PERCENTILE_HOT = '#c00000';
 
 /** Where the warm half of the ramp hands over from amber to red. */
 const WARM_HANDOVER = 0.72;

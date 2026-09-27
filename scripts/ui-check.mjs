@@ -104,12 +104,15 @@ await page.waitForSelector('.workbench__top');
 // --- 0. the page must actually be styled ---------------------------------
 // A stale dev-server transform can serve `const __vite__css = ""`, which looks
 // like a layout catastrophe rather than a missing stylesheet. Fail loudly here.
+// The signals below are properties the theme itself guarantees: the UI is mono
+// throughout (it is a data tool) and metric figures are flex rows. Keep them
+// theme-neutral — do not assert geometry that a restyle may legitimately change.
 const styling = await page.evaluate(() => {
   const app = document.querySelector('.app');
   const chip = document.querySelector('.chip');
   return {
     sheets: document.styleSheets.length,
-    chipRadius: chip ? getComputedStyle(chip).borderRadius : '0px',
+    chipFont: chip ? getComputedStyle(chip).fontFamily : '',
     metricValueDisplay: getComputedStyle(document.querySelector('.metric__value')).display,
     appHeight: Math.round(app.getBoundingClientRect().height),
     viewport: window.innerHeight,
@@ -117,8 +120,8 @@ const styling = await page.evaluate(() => {
 });
 check(
   'stylesheet is applied',
-  styling.sheets > 0 && styling.chipRadius !== '0px' && styling.metricValueDisplay === 'flex',
-  `${styling.sheets} sheet(s), chip radius ${styling.chipRadius}, metric value ${styling.metricValueDisplay}`,
+  styling.sheets > 0 && /mono/i.test(styling.chipFont) && styling.metricValueDisplay === 'flex',
+  `${styling.sheets} sheet(s), chip font ${styling.chipFont.split(',')[0].trim()}, metric value ${styling.metricValueDisplay}`,
 );
 check(
   'page is not rendering unstyled',
@@ -270,7 +273,12 @@ check('input/preview divider tracks the pointer monotonically', risingX,
 
 // --- 6. heatmap selection ------------------------------------------------
 // Clicking a topbar metric shades the preview by it; clicking it again clears.
-const baseTopbarHeight = (await layout()).workbenchTop; // measured before activation
+// The topbar height is read before activation so the check below compares like
+// with like — an exact pixel value would only re-assert whatever theme is in
+// place, and the theme is free to change.
+const topbarBefore = await page.evaluate(() =>
+  Math.round(document.querySelector('.topbar').getBoundingClientRect().height),
+);
 const heatState = () =>
   page.evaluate(() => {
     const colours = new Set(
@@ -302,7 +310,8 @@ heat = await heatState();
 check('selecting another metric switches (one at a time)',
   heat.active.length === 1 && heat.legend === 'Chars / word' && heat.heatSpans === 163,
   `active: ${heat.active.join(', ') || 'none'}, ${heat.heatSpans} spans`);
-check('activating a metric does not resize the topbar', heat.topbar === 56, `${heat.topbar}px`);
+check('activating a metric does not resize the topbar', heat.topbar === topbarBefore,
+  `${heat.topbar}px vs ${topbarBefore}px before activation`);
 
 await metricButton('Chars / word').click();
 await page.waitForTimeout(150);

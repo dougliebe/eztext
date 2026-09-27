@@ -218,10 +218,31 @@ function main(): void {
 
   console.log('\n  percentile colour ramp:');
   const channel = (hex: string, index: number) => parseHex(hex)[index];
-  check('  neutral grey at the median', percentileColor(50) === '#8592a3', percentileColor(50));
+
+  // WCAG relative luminance, for the contrast guard below.
+  const luminance = (hex: string) => {
+    const linear = parseHex(hex).map((value) => {
+      const c = value / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  };
+  const contrastOnPaper = (hex: string) => 1.05 / (luminance(hex) + 0.05);
+
+  // The ramp's exact hexes are theme values, so they are asserted as properties
+  // instead — how the middle and the ends should behave — plus the one thing the
+  // light theme requires of them: they are used as small text on white paper.
+  check(
+    '  neutral grey at the median',
+    channel(percentileColor(50), 0) === channel(percentileColor(50), 1),
+    percentileColor(50),
+  );
   check(
     '  saturates green at p0 and red at p100',
-    percentileColor(0) === '#56d39a' && percentileColor(100) === '#f2767c',
+    channel(percentileColor(0), 1) > channel(percentileColor(0), 0) &&
+      channel(percentileColor(100), 0) > channel(percentileColor(100), 1) &&
+      channel(percentileColor(0), 1) > channel(percentileColor(50), 1) &&
+      channel(percentileColor(100), 0) > channel(percentileColor(50), 0),
     `${percentileColor(0)} … ${percentileColor(100)}`,
   );
   check(
@@ -240,6 +261,15 @@ function main(): void {
   check(
     '  every percentile yields a valid colour',
     Array.from({ length: 101 }, (_, p) => percentileColor(p)).every((hex) => /^#[0-9a-f]{6}$/.test(hex)),
+  );
+  const worst = Array.from({ length: 101 }, (_, p) => contrastOnPaper(percentileColor(p))).reduce(
+    (min, value) => Math.min(min, value),
+    Number.POSITIVE_INFINITY,
+  );
+  check(
+    '  every percentile is legible as small text on paper',
+    worst >= 4.5,
+    `worst contrast ${worst.toFixed(2)}:1 (WCAG AA needs 4.5:1)`,
   );
 
   console.log(`\n${RULE}\nHeatmaps`);

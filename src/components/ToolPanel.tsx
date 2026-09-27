@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { withAlpha } from '../core/color';
 import type { ResolvedAnnotation, Stat, Tool, ToolResult } from '../core/types';
 import { StatGrid } from './StatGrid';
 
@@ -108,6 +107,14 @@ export function ToolPanel({
             <p className="muted">Nothing matched — try loosening this tool’s settings.</p>
           ) : (
             <ol className="rows" ref={listRef}>
+              {/* Column headings for the ruled list below; the list is a list,
+                  not a table, so these are decorative labels only. */}
+              <li className="rows__head" aria-hidden="true">
+                <span>#</span>
+                <span>Range</span>
+                <span>Match</span>
+                <span>Group</span>
+              </li>
               {visible.slice(0, limit).map((annotation, index) => (
                 <ResultRow
                   key={annotation.id}
@@ -159,7 +166,7 @@ function ResultRow({ annotation, index, state, onHover, onSelect }: ResultRowPro
         type="button"
         data-row={annotation.id}
         className={`row row--${state}`}
-        style={{ borderLeftColor: withAlpha(annotation.color, state === 'none' ? 0.6 : 1) }}
+        style={{ borderLeftColor: annotation.color }}
         onMouseEnter={() => onHover(annotation.id)}
         onMouseLeave={() => onHover(null)}
         onFocus={() => onHover(annotation.id)}

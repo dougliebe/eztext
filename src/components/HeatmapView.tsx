@@ -43,7 +43,9 @@ export const HeatmapView = memo(function HeatmapView({ text, spans, metric }: He
       nodes.push(<span key={`gap-${cursor}`}>{text.slice(cursor, span.start)}</span>);
     }
 
-    const alpha = span.unit === 'sentence' ? 0.1 + 0.26 * span.intensity : 0.18 + 0.46 * span.intensity;
+    // Tuned for paper: the wash has to survive being laid over white, and
+    // sentences cover far more of the page, so their range stays gentler.
+    const alpha = span.unit === 'sentence' ? 0.14 + 0.3 * span.intensity : 0.2 + 0.5 * span.intensity;
 
     nodes.push(
       <span

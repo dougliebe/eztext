@@ -79,7 +79,10 @@ function SegmentView({ segment, hoverId, selectedId, onHover, onSelect }: Segmen
     const state = layer.id === selectedId ? 'selected' : layer.id === hoverId ? 'hover' : 'none';
     const isTop = depth === total - 1;
 
-    const baseAlpha = total === 1 ? 0.2 : 0.08 + 0.07 * depth;
+    // Light paper needs a stronger wash than a dark pane did: the tint has to
+    // stay readable over white, and the widest (structural) layer must remain
+    // visible even when two narrower layers stack on top of it.
+    const baseAlpha = total === 1 ? 0.3 : 0.12 + 0.09 * depth;
     const alpha =
       state === 'selected'
         ? Math.min(baseAlpha + 0.34, 0.78)
@@ -89,7 +92,7 @@ function SegmentView({ segment, hoverId, selectedId, onHover, onSelect }: Segmen
 
     const style: CSSProperties = {
       backgroundColor: withAlpha(layer.color, alpha),
-      borderRadius: 2,
+      borderRadius: 0,
       color: state === 'none' ? undefined : 'var(--text-strong)',
     };
 

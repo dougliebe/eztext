@@ -1,36 +1,52 @@
 /* ==========================================================================
    eztext — design tokens
+   --------------------------------------------------------------------------
+   Theme: light "ledger". The reference points are a printed financial data
+   sheet (dense 1px grids, banded rows, gray header cells, red/green deltas,
+   link-blue labels) and a terminal accounting report (dashed separator rules,
+   right-aligned tabular figures, inverse-video emphasis).
+
+   Rules of the visual language:
+     · one font only — mono, tabular figures, everything lines up in columns;
+     · flat surfaces: no radius, no gradient, no blur;
+     · structure is drawn with rules: 1px black for frames, 1px grey for
+       cell separators, 1px dashed for report subtotals;
+     · "on" states invert to black rather than glowing.
    ========================================================================== */
 
 :root {
-  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'JetBrains Mono', Consolas, 'Liberation Mono', monospace;
+  /* The whole UI is monospaced: a text-analysis workbench is a data tool. */
+  --font-ui: var(--font-mono);
 
-  --bg-0: #0e1115;
-  --bg-1: #14191f;
-  --bg-2: #1a2027;
-  --bg-3: #222a33;
-  --bg-4: #2b3540;
+  --bg-0: #ffffff; /* page + splitter gutters (paper) */
+  --bg-1: #ffffff; /* pane body */
+  --bg-2: #e9e9e3; /* header / band cells */
+  --bg-3: #d7d7ce; /* pressed band cell */
+  --bg-4: #141414; /* inverse-video fill */
 
-  --border: #242e39;
-  --border-strong: #33415250;
+  --band: #f6f6f1; /* zebra rows */
+  --sel: #cfe0ff; /* spreadsheet selection */
+  --sel-soft: #e9f0ff; /* spreadsheet hover */
 
-  --text: #d7dee7;
-  --text-strong: #f2f6fb;
-  --muted: #8592a3;
-  --muted-dim: #6b7784;
+  --border: #141414; /* structural frame */
+  --border-soft: #b9b9b0; /* cell separator */
+  --dash: #a9a9a1; /* dashed report rule */
 
-  --accent: #4fa8f7;
-  --accent-soft: #4fa8f726;
-  --good: #56d39a;
-  --warn: #f0b45c;
-  --bad: #f2767c;
+  --text: #1b1b1b;
+  --text-strong: #000000;
+  --muted: #6b6b63;
+  --muted-dim: #8d8d85;
 
-  --radius: 8px;
-  --radius-sm: 6px;
-  --shadow-pop: 0 16px 36px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --accent: #0000cc; /* link blue, as used for symbols in the reference sheet */
+  --accent-soft: rgba(0, 0, 204, 0.09);
+  --good: #0a7a0a; /* financial green */
+  --warn: #8a5a00;
+  --bad: #c00000; /* financial red */
 
-  color-scheme: dark;
+  --shadow-pop: 4px 4px 0 rgba(20, 20, 20, 0.85);
+
+  color-scheme: light;
 }
 
 * {
@@ -48,8 +64,8 @@ body {
   background: var(--bg-0);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums slashed-zero;
   overflow: hidden;
 }
 
@@ -76,14 +92,19 @@ button {
   color: inherit;
 }
 
+::selection {
+  background: var(--sel);
+  color: var(--text-strong);
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 0;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2c3846 transparent;
+  scrollbar-color: #b4b4ab transparent;
 }
 
 ::-webkit-scrollbar {
@@ -96,14 +117,14 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2c3846;
+  background: #b4b4ab;
   border: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: 0;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b4a5c;
+  background: #8d8d85;
   background-clip: content-box;
 }
 
@@ -118,14 +139,18 @@ button {
   min-height: 0;
 }
 
+/*
+ * The header is a table header: cells stretch to the full band height so the
+ * column separators run edge to edge, the way a ruled sheet does.
+ */
 .topbar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 24px;
-  padding: 10px 16px;
-  background: linear-gradient(180deg, #171d24, #131920);
-  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  padding: 0 0 0 14px;
+  background: var(--bg-0);
+  border-bottom: 2px solid var(--border);
 }
 
 .brand {
@@ -133,6 +158,7 @@ button {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  padding: 9px 0;
 }
 
 .brand__mark {
@@ -140,23 +166,23 @@ button {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(140deg, #4fa8f7, #2c6fb5);
-  color: #06121d;
-  font-weight: 800;
+  border-radius: 0;
+  background: var(--bg-4);
+  color: #ffffff;
+  font-weight: 700;
   font-size: 13px;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 .brand__name {
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   color: var(--text-strong);
 }
 
 .brand__tag {
-  font-size: 11.5px;
+  font-size: 10.5px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -166,53 +192,59 @@ button {
 .metrics {
   display: flex;
   align-items: stretch;
-  gap: 12px;
+  gap: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
 /* Separates the corpus counts from the per-word / per-sentence ratios. */
 .metrics__rule {
-  width: 1px;
-  align-self: center;
-  height: 24px;
+  width: 2px;
+  align-self: stretch;
   background: var(--border);
 }
 
+/* One column of the header band. The five ratio metrics are <button>s (they
+   shade the preview when clicked) and the counts are <div>s, so the button
+   chrome is reset here — but the column rule is this cell's own edge, so it is
+   declared after `border: 0`. */
 .metric {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  line-height: 1.2;
-  min-width: 40px;
-  cursor: default;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1.15;
+  min-width: 54px;
+  padding: 7px 10px;
   background: none;
   border: 0;
+  border-left: 1px solid var(--border-soft);
   font: inherit;
   color: inherit;
   text-align: right;
+  cursor: default;
 }
 
-/* Metrics that shade the preview when clicked. */
+/* A clickable metric is a filter toggle for the preview, so it fills like one. */
 .metric--clickable {
   cursor: pointer;
-  padding: 3px 6px;
-  margin: -3px -6px;
-  border-radius: var(--radius-sm);
-  transition: background-color 110ms ease, box-shadow 110ms ease;
+  transition: background-color 90ms linear;
 }
 
 .metric--clickable:hover {
-  background: var(--bg-3);
+  background: var(--band);
 }
 
 .metric--clickable:hover .metric__label {
   color: var(--text);
 }
 
-.metric--active {
-  background: var(--accent-soft);
-  box-shadow: inset 0 -2px 0 var(--accent);
+/* Active column: the same fill the results list uses for a selected row. */
+.metric--active,
+.metric--active:hover {
+  background: var(--sel);
+  box-shadow: inset 0 -3px 0 var(--border);
 }
 
 .metric--active .metric__label {
@@ -220,19 +252,21 @@ button {
 }
 
 .metric__label {
-  font-size: 9.5px;
+  font-size: 9px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--muted);
   white-space: nowrap;
 }
 
 .metric__value {
   display: flex;
+  /* Centred, not baseline-aligned: the percentile chip is a bordered box. */
   align-items: center;
   gap: 4px;
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-strong);
 }
@@ -241,25 +275,26 @@ button {
    percentileColor() inline; the box is neutral except in the tails. */
 .metric__chip {
   font-size: 9px;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1;
   padding: 2px 3px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--bg-3);
+  border-radius: 0;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-0);
   color: var(--muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
+/* Tail tints, mixed down from the theme's own green/amber for paper. */
 .metric--good .metric__chip {
-  border-color: #56d39a55;
-  background: #56d39a1f;
+  border-color: color-mix(in srgb, var(--good) 45%, #ffffff);
+  background: color-mix(in srgb, var(--good) 10%, #ffffff);
 }
 
 .metric--warn .metric__chip {
-  border-color: #f0b45c55;
-  background: #f0b45c1f;
+  border-color: color-mix(in srgb, var(--warn) 45%, #ffffff);
+  background: color-mix(in srgb, var(--warn) 12%, #ffffff);
 }
 
 .metric--accent .metric__value {
@@ -278,16 +313,24 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 14px;
-  font-size: 11.5px;
+  padding: 4px 12px;
+  font-size: 10.5px;
   color: var(--muted);
-  background: var(--bg-1);
-  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  border-top: 2px solid var(--border);
   font-variant-numeric: tabular-nums;
 }
 
-.statusbar__sep {
-  opacity: 0.5;
+.statusbar__sep,
+.pane__footer-sep {
+  font-size: 0;
+}
+
+.statusbar__sep::before,
+.pane__footer-sep::before {
+  content: '│';
+  font-size: 11px;
+  color: var(--border-soft);
 }
 
 .statusbar__spacer {
@@ -305,16 +348,16 @@ button {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 20px;
-  padding: 8px 16px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
+  gap: 8px 18px;
+  padding: 7px 12px;
+  background: var(--bg-2);
+  border-bottom: 2px solid var(--border);
 }
 
 .toolbar__groups {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 22px;
+  gap: 8px 18px;
   min-width: 0;
 }
 
@@ -323,12 +366,20 @@ button {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding-left: 18px;
+  border-left: 1px solid var(--border-soft);
+}
+
+.toolbar__group:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 
 .toolbar__group-label {
-  font-size: 10px;
+  font-size: 9px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.1em;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -336,14 +387,16 @@ button {
 .toolbar__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .toolbar__meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--muted);
 }
 
@@ -355,89 +408,93 @@ button {
   position: relative;
 }
 
+/* A chip is a filter toggle in a data sheet: square, ruled, flat. */
 .chip {
   display: flex;
   align-items: stretch;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-2);
+  border-radius: 0;
+  background: var(--bg-0);
   overflow: hidden;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: background-color 90ms linear;
 }
 
 .chip:hover {
-  border-color: #33465c;
+  background: var(--band);
 }
 
+/* Flat tint of the tool colour, mixed with paper. Fallback first, then mix. */
 .chip--on {
-  border-color: var(--tool-color);
-  background: var(--tool-color-soft, var(--bg-2));
+  background: var(--bg-3);
+  background: color-mix(in srgb, var(--tool-color) 20%, #ffffff);
+}
+
+.chip--open {
+  box-shadow: inset 0 -3px 0 var(--tool-color);
 }
 
 .chip__main {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 9px;
+  padding: 4px 9px;
   background: none;
   border: 0;
   cursor: pointer;
   white-space: nowrap;
 }
 
+/* Colour key: a ruled swatch, so a pastel tool colour still reads as a chip. */
 .chip__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 0;
+  border: 1px solid var(--border);
   background: var(--tool-color);
-  opacity: 0.35;
-  box-shadow: 0 0 0 3px var(--tool-color-soft, transparent);
-  transition: opacity 120ms ease;
-}
-
-.chip--on .chip__dot {
-  opacity: 1;
+  flex: 0 0 auto;
 }
 
 .chip__name {
-  font-size: 12.5px;
-  font-weight: 550;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--muted);
 }
 
 .chip--on .chip__name {
+  font-weight: 700;
   color: var(--text-strong);
 }
 
 .chip__count {
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-variant-numeric: tabular-nums;
-  padding: 1px 5px;
-  border-radius: 20px;
-  background: var(--tool-color);
-  color: #08121b;
-  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 0;
+  background: var(--bg-4);
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .chip__gear {
   display: grid;
   place-items: center;
-  width: 26px;
+  width: 24px;
   border: 0;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--border-soft);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .chip__gear:hover {
-  background: var(--bg-3);
-  color: var(--text-strong);
+  background: var(--bg-4);
+  color: #ffffff;
 }
 
 .chip__gear--dirty {
-  color: var(--warn);
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .popover {
@@ -445,11 +502,11 @@ button {
   top: calc(100% + 6px);
   left: 0;
   z-index: 60;
-  width: 288px;
+  width: 292px;
   padding: 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 0;
   box-shadow: var(--shadow-pop);
 }
 
@@ -458,37 +515,43 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
 
 .popover__title {
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--text-strong);
 }
 
 .popover__close {
-  border: 0;
+  border: 1px solid transparent;
   background: none;
   color: var(--muted);
   cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 0;
+  line-height: 1.2;
 }
 
 .popover__close:hover {
-  background: var(--bg-3);
-  color: var(--text-strong);
+  border-color: var(--border);
+  background: var(--bg-4);
+  color: #ffffff;
 }
 
 .popover__desc {
-  margin: 6px 0 10px;
-  font-size: 11.5px;
+  margin: 8px 0 10px;
+  font-size: 11px;
   line-height: 1.5;
   color: var(--muted);
 }
 
 .popover__empty {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -498,7 +561,7 @@ button {
   gap: 6px;
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--border);
+  border-top: 1px dashed var(--dash);
 }
 
 .options {
@@ -521,8 +584,8 @@ button {
 }
 
 .option--check input {
-  margin-top: 2px;
-  accent-color: var(--accent);
+  margin-top: 1px;
+  accent-color: var(--bg-4);
 }
 
 .option__body {
@@ -532,29 +595,31 @@ button {
 }
 
 .option__label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text);
 }
 
 .option__hint {
-  font-size: 10.5px;
+  font-size: 10px;
   line-height: 1.45;
   color: var(--muted);
 }
 
 .field {
   width: 100%;
-  padding: 5px 8px;
-  background: var(--bg-1);
+  padding: 4px 7px;
+  background: var(--bg-0);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   color: var(--text);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
 }
 
 .field:focus {
-  border-color: var(--accent);
-  outline: none;
+  border-color: var(--border);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 /* ==========================================================================
@@ -609,6 +674,9 @@ button {
 
 /* ==========================================================================
    Splitter
+   --------------------------------------------------------------------------
+   The divider reads as a ruled line between two sheets, not as a handle: a 1px
+   black rule inside a 7px hit area, which turns link-blue while hovered.
    ========================================================================== */
 
 .splitter {
@@ -635,19 +703,18 @@ button {
 }
 
 .splitter__grip {
-  border-radius: 3px;
-  background: var(--bg-4);
-  transition: background-color 120ms ease;
+  background: var(--border);
+  transition: background-color 80ms linear;
 }
 
 .splitter--y .splitter__grip {
-  width: 46px;
-  height: 3px;
+  width: 100%;
+  height: 1px;
 }
 
 .splitter--x .splitter__grip {
-  width: 3px;
-  height: 46px;
+  width: 1px;
+  height: 100%;
 }
 
 .splitter:hover .splitter__grip,
@@ -679,22 +746,22 @@ button {
   align-items: center;
   gap: 12px;
   flex: 0 0 auto;
-  padding: 6px 12px;
+  padding: 5px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
   min-height: 34px;
 }
 
 .pane__title {
-  font-size: 11px;
-  font-weight: 650;
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  letter-spacing: 0.12em;
+  color: var(--text);
 }
 
 .pane__hint {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -721,15 +788,11 @@ button {
   gap: 8px;
   flex: 0 0 auto;
   padding: 4px 12px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
   background: var(--bg-2);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-}
-
-.pane__footer-sep {
-  opacity: 0.5;
 }
 
 /* ==========================================================================
@@ -744,14 +807,18 @@ button {
   background: var(--bg-1);
 }
 
+/*
+ * Gutter metrics must stay byte-for-byte identical to the textarea's (font
+ * shorthand + 12px padding) or the line numbers drift off the lines.
+ */
 .input__gutter {
   flex: 0 0 auto;
   width: 46px;
   padding: 12px 0;
   overflow: hidden;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border-soft);
   background: var(--bg-2);
-  color: #55606e;
+  color: var(--muted-dim);
   font: 400 13px/1.7 var(--font-mono);
   text-align: right;
   user-select: none;
@@ -776,7 +843,7 @@ button {
 }
 
 .input__area::placeholder {
-  color: #5b6673;
+  color: var(--muted-dim);
 }
 
 /* ==========================================================================
@@ -790,7 +857,7 @@ button {
 .highlights__text {
   margin: 0;
   padding: 12px 16px 18px;
-  font: 400 13px/1.95 var(--font-mono);
+  font: 400 13px/1.9 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: break-word;
   tab-size: 2;
@@ -799,7 +866,7 @@ button {
 
 .hl {
   cursor: pointer;
-  transition: background-color 90ms linear;
+  transition: background-color 70ms linear;
 }
 
 .hl--top {
@@ -828,7 +895,7 @@ button {
 
 .heat-legend__label {
   font-size: 10.5px;
-  font-weight: 650;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--accent);
@@ -837,8 +904,8 @@ button {
 
 .heat-legend__ramp {
   width: 88px;
-  height: 8px;
-  border-radius: 4px;
+  height: 10px;
+  border-radius: 0;
   border: 1px solid var(--border);
   flex: 0 0 auto;
 }
@@ -853,29 +920,35 @@ button {
 
 /* Heat spans in the preview. */
 .heat {
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .heat--word {
   cursor: help;
 }
 
+/* Paper throws light back, so hover darkens the wash — the opposite of what a
+   dark pane needed. (An outline would collide with the hot-span inset rule
+   that HeatmapView sets inline.) */
 .heat:hover {
-  filter: brightness(1.18);
+  filter: brightness(0.94) saturate(1.15);
 }
 
 .legend__item {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--muted);
 }
 
 .legend__swatch {
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: 0;
+  border: 1px solid var(--border);
 }
 
 /* ==========================================================================
@@ -903,7 +976,9 @@ button {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -911,18 +986,26 @@ button {
 }
 
 .coverage__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  border: 1px solid var(--border);
   background: var(--tool-color, var(--muted));
   flex: 0 0 auto;
 }
 
+/* Decile gridlines: each rule is 10% of the document. */
 .coverage__track {
   position: relative;
-  height: 9px;
-  border-radius: 3px;
-  background: var(--bg-3);
+  height: 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 0;
+  background-color: var(--bg-0);
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(20, 20, 20, 0.16) 0 1px,
+    transparent 1px 10%
+  );
   overflow: hidden;
 }
 
@@ -932,14 +1015,21 @@ button {
   bottom: 0;
   padding: 0;
   border: 0;
-  border-radius: 2px;
+  border-radius: 0;
   cursor: pointer;
   min-width: 2px;
 }
 
+.coverage__block--hover,
+.coverage__block--selected {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
 .coverage__share {
-  font-size: 10.5px;
+  font-size: 10px;
   text-align: right;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-soft);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -948,27 +1038,37 @@ button {
    Results pane
    ========================================================================== */
 
+/* Tabs are ruled cells; the active one is the inverse-video selected sheet. */
 .pane__header--tabs {
-  padding-left: 6px;
+  padding: 0 12px 0 0;
+  gap: 0;
 }
 
 .tabs {
   display: flex;
-  gap: 2px;
+  align-self: stretch;
+  border-right: 1px solid var(--border);
 }
 
 .tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 11px;
+  padding: 0 12px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-left: 1px solid var(--border-soft);
+  border-radius: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 550;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   cursor: pointer;
+}
+
+.tab:first-child {
+  border-left: 0;
 }
 
 .tab:hover {
@@ -977,17 +1077,24 @@ button {
 }
 
 .tab--on {
-  background: var(--bg-3);
-  color: var(--text-strong);
+  background: var(--bg-4);
+  color: #ffffff;
 }
 
 .tab__badge {
-  font-size: 10px;
-  padding: 0 5px;
-  border-radius: 20px;
-  background: var(--bg-4);
+  font-size: 9.5px;
+  padding: 0 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: var(--bg-0);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+.tab--on .tab__badge {
+  border-color: #ffffff;
+  background: #ffffff;
+  color: #000000;
 }
 
 .panels {
@@ -999,22 +1106,24 @@ button {
 
 .tool-panel {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 0;
   background: var(--bg-1);
   overflow: hidden;
 }
 
+/* A colour-keyed column marker, like a ledger account stripe. */
 .tool-panel__head {
   display: flex;
   align-items: center;
-  background: linear-gradient(90deg, var(--tool-color-soft, var(--bg-2)), var(--bg-2) 55%);
+  background: var(--bg-2);
   border-bottom: 1px solid var(--border);
+  box-shadow: inset 6px 0 0 var(--tool-color, var(--accent));
 }
 
 .tool-panel__head--static {
-  padding: 6px 10px;
+  padding: 6px 10px 6px 16px;
   gap: 8px;
-  font-size: 12px;
+  font-size: 10.5px;
 }
 
 .tool-panel__toggle {
@@ -1022,7 +1131,7 @@ button {
   align-items: center;
   gap: 8px;
   flex: 1 1 auto;
-  padding: 6px 10px;
+  padding: 6px 10px 6px 16px;
   background: none;
   border: 0;
   cursor: pointer;
@@ -1032,27 +1141,32 @@ button {
 .tool-panel__dot {
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: 0;
+  border: 1px solid var(--border);
   background: var(--tool-color, var(--accent));
+  flex: 0 0 auto;
 }
 
 .tool-panel__name {
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--text-strong);
 }
 
 .tool-panel__count {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .disclosure {
   display: inline-block;
+  width: 9px;
   font-size: 9px;
   color: var(--muted);
-  transition: transform 120ms ease;
+  transition: transform 90ms linear;
 }
 
 .disclosure--open {
@@ -1069,48 +1183,80 @@ button {
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 
 .pill {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--bg-2);
+  border-radius: 0;
+  background: var(--bg-0);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
   cursor: pointer;
 }
 
 .pill:hover {
-  border-color: #3a4b60;
+  background: var(--band);
   color: var(--text);
 }
 
 .pill--on {
-  border-color: var(--tool-color, var(--accent));
-  color: var(--text-strong);
-  background: var(--tool-color-soft, var(--bg-3));
+  background: var(--bg-4);
+  border-color: var(--bg-4);
+  color: #ffffff;
 }
 
 .pill__count {
-  font-size: 10px;
+  font-size: 9.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
+.pill--on .pill__count {
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* The row list is the sheet: sticky header, zebra rows, ruled selection. */
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   max-height: 340px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: var(--bg-0);
+}
+
+.rows__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 34px 92px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 11px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.rows > li {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.rows > li:last-child {
+  border-bottom: 0;
 }
 
 .row {
@@ -1126,34 +1272,42 @@ button {
   cursor: pointer;
   text-align: left;
   font: inherit;
+  /* Keep a row revealed by scrollIntoView clear of the sticky column head. */
+  scroll-margin-top: 22px;
+}
+
+/* Zebra banding. `.rows__head` is the first child, so odd children are the
+   second, fourth, … data rows — i.e. every other row, starting unbanded. */
+.rows > li:nth-child(odd) .row--none {
+  background: var(--band);
 }
 
 .row:hover,
 .row--hover {
-  background: var(--bg-2);
+  background: var(--sel-soft);
 }
 
 .row--selected {
-  background: var(--bg-3);
+  background: var(--sel);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .row__index {
-  font-size: 10.5px;
-  color: var(--muted);
+  font-size: 10px;
+  color: var(--muted-dim);
   font-variant-numeric: tabular-nums;
   text-align: right;
+  padding-right: 2px;
 }
 
 .row__range {
-  font-size: 10.5px;
-  color: #63707f;
-  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .row__text {
-  font-size: 12px;
-  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -1166,12 +1320,15 @@ button {
 }
 
 .row__group {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 20px;
-  background: var(--bg-3);
+  font-size: 9.5px;
+  padding: 0 5px;
+  border: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: var(--bg-0);
   color: var(--muted);
   white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .notes {
@@ -1182,11 +1339,11 @@ button {
 
 .note {
   padding: 6px 9px;
-  border-left: 2px solid var(--bg-4);
-  background: var(--bg-2);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-size: 11.5px;
-  line-height: 1.55;
+  border-left: 3px solid var(--muted-dim);
+  background: var(--band);
+  border-radius: 0;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--muted);
 }
 
@@ -1200,33 +1357,37 @@ button {
 
 .note--bad {
   border-left-color: var(--bad);
+  color: var(--bad);
 }
 
 /* ==========================================================================
    Stats
+   --------------------------------------------------------------------------
+   Report-style figures: ruled by dashed separators instead of boxed in cards,
+   so a row of metrics reads as a subtotal line.
    ========================================================================== */
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 7px;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 0;
+  border-top: 1px dashed var(--dash);
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
+  gap: 1px;
+  padding: 7px 10px 8px;
   min-width: 0;
+  border-bottom: 1px dashed var(--dash);
 }
 
 .stat__label {
-  font-size: 10px;
+  font-size: 9px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1234,9 +1395,9 @@ button {
 }
 
 .stat__value {
-  font-size: 19px;
-  font-weight: 620;
-  line-height: 1.15;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
   overflow: hidden;
@@ -1244,16 +1405,11 @@ button {
 }
 
 .stat__hint {
-  font-size: 10.5px;
-  color: var(--muted);
+  font-size: 10px;
+  color: var(--muted-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.stat--accent {
-  border-color: #2b4a68;
-  background: linear-gradient(180deg, #1b2a38, var(--bg-2));
 }
 
 .stat--accent .stat__value {
@@ -1264,16 +1420,8 @@ button {
   color: var(--good);
 }
 
-.stat--warn {
-  border-color: #5a4526;
-}
-
 .stat--warn .stat__value {
   color: var(--warn);
-}
-
-.stat--bad {
-  border-color: #5c2e33;
 }
 
 .stat--bad .stat__value {
@@ -1282,6 +1430,9 @@ button {
 
 /* ==========================================================================
    JSON view
+   --------------------------------------------------------------------------
+   Inverse video on purpose: the machine-readable export is shown the way a
+   terminal report prints — dark panel, pale mono text.
    ========================================================================== */
 
 .json {
@@ -1295,16 +1446,18 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
 }
 
 .json__code {
   flex: 1 1 auto;
   margin: 0;
   padding: 12px 14px;
-  font: 400 11.5px/1.65 var(--font-mono);
-  color: #b9c6d4;
+  font: 400 11.5px/1.6 var(--font-mono);
+  color: #dcdcd4;
+  background: var(--bg-4);
   white-space: pre;
   tab-size: 2;
 }
@@ -1317,55 +1470,65 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--bg-3);
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-0);
   color: var(--text);
-  font-size: 12px;
-  font-weight: 550;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .btn:hover:not(:disabled) {
   background: var(--bg-4);
-  color: var(--text-strong);
+  border-color: var(--bg-4);
+  color: #ffffff;
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  background: var(--band);
+  color: var(--muted-dim);
+  border-color: var(--border-soft);
   cursor: not-allowed;
 }
 
+/* Ghost buttons are hyperlinks: blue, underlined on hover. */
 .btn--ghost {
   background: transparent;
   border-color: transparent;
-  color: var(--muted);
+  color: var(--accent);
 }
 
 .btn--ghost:hover:not(:disabled) {
-  background: var(--bg-3);
-  color: var(--text);
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .btn--sm {
-  padding: 3px 9px;
-  font-size: 11.5px;
+  padding: 2px 7px;
+  font-size: 9.5px;
 }
 
 .toggle {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--muted);
   cursor: pointer;
   user-select: none;
 }
 
 .toggle input {
-  accent-color: var(--accent);
+  accent-color: var(--bg-4);
 }
 
 /* ==========================================================================
@@ -1378,28 +1541,57 @@ button {
   gap: 6px;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  min-height: 160px;
+  /* 24px = the 12px margin below, so an empty pane gains no scrollbar. */
+  min-height: max(160px, calc(100% - 24px));
+  margin: 12px;
   padding: 32px;
+  border: 1px dashed var(--dash);
   text-align: center;
 }
 
 .empty__title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
   color: var(--text);
 }
 
 .empty__body {
-  font-size: 12.5px;
+  font-size: 11.5px;
   line-height: 1.6;
   color: var(--muted);
   max-width: 46ch;
 }
 
 .muted {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
+}
+
+@media (max-width: 1380px) {
+  /* The tagline is 308px of decoration; the metric columns need the room.
+     Below this width the header stays a single ruled row. */
+  .brand__tag {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  /* Too narrow for one row: give the stats their own full-width ruled band
+     rather than orphaning a metric at the end of a wrapped row. */
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .metrics {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .metrics__rule {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {
