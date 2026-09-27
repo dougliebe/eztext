@@ -147,6 +147,7 @@ inclusion in `npm run smoke` for free.
 | --- | --- | --- |
 | **Readability** | Long sentences and complex words overlapping, so it exercises the layering | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word, complex-word share |
 | **Surprisal** | Every word shaded transparent → red by how many bits the language model needed to predict it | mean bits/token, perplexity, hardest words, top-decile count, model name |
+| **Syntactic density** | The ten weighted features of Golub's Syntactic Density Score, grouped, with the T-unit and clause spans behind variables 1–4 | SDS, grade equivalent, weighted total, and every frequency with its weight and contribution |
 
 Earlier revisions shipped Sentences, Verbs and Repeated-words tools as worked examples of the contract.
 They were removed because they were demonstrations rather than things worth reading with — the recipe
@@ -162,6 +163,8 @@ src/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
     metrics.ts      topbar metrics, z-scores + CDF percentiles, Dale–Chall rules
+    gsds.ts         Golub Syntactic Density Score: lexicons, detection, weights, grade conversion
+    syntax.ts       T-units, subordinate clauses, verb-ish tests (shared by structure tools)
     surprisal.ts    language-model surprisal: logits → per-word bits, perturbation gains
     heatmap.ts      click-a-metric preview shading (document-relative intensity)
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
@@ -420,6 +423,50 @@ doubled consonants, or a hyphenated compound whose parts are all listed.
 The list is deliberately narrow (words known to 80% of fourth-graders), so ordinary adult prose scores
 high: the bundled sample text lands at ~21% unfamiliar. That is the formula working as intended, not a bug.
 
+## Golub Syntactic Density Score
+
+The **Syntactic density** tool implements Golub's (1973) score: ten weighted syntax features summed and
+divided by the number of T-units (`Total = Σ weight × frequency`, `SDS = Total ÷ T-units`, then the
+published linear grade conversion).
+
+| # | Variable | Weight | Extraction |
+| --- | --- | --- | --- |
+| 1 | Words / T-unit | 0.95 | word tokenizer + T-unit splitter |
+| 2 | Subordinate clauses / T-unit | 0.90 | subordinator/relative list + verb lookahead |
+| 3 | Main clause word length | 0.20 | T-unit words minus merged clause spans |
+| 4 | Subordinate clause word length | 0.50 | merged clause spans |
+| 5 | Modals | 0.65 | closed list, token match |
+| 6 | Be / have in the auxiliary position | 0.40 | closed list + next-word test |
+| 7 | Prepositional phrases | 0.75 | closed list, local disambiguation |
+| 8 | Possessives | 0.70 | pronoun list + apostrophe orthography |
+| 9 | Adverbs of time | 0.60 | closed list, counted by form (as the instrument did) |
+| 10 | Gerunds, participles, absolutes | 0.85 | the original program's suffix proxy |
+
+Variables 5–9 are closed-class lookups and behave like real counts. Variables 1–4 all depend on one
+component — T-unit and subordinate-clause segmentation in `core/syntax.ts` — and variable 10 reproduces
+the 1974 program's rule (a >6-letter `-ing`/`-ed`/`-en` word with no be/have in the preceding three
+words), which the paper itself called only "predominantly accurate". Every annotation therefore carries
+the rule that fired, and the stats carry each variable's weight and weighted contribution, so the score
+is auditable rather than oracular.
+
+Two properties of the instrument are surfaced instead of hidden:
+
+- **Be/have has two published readings.** The hand formula counts only the auxiliary position; the 1974
+  program counted *every* form and scored higher — ED090304 measured r = .96 against hand scoring and
+  named the difference. The tool's `Be / have` option switches between them and reports both counts.
+- **The literal score is sample-length dependent.** Variables 1–4 enter as rates, then the whole sum is
+  divided by T-units again, so the score falls as a document grows at constant syntax density
+  (Belanger 1978). The instrument was normed on ~200-word samples; the tool turns the stat amber past
+  400 words and says so in the hint rather than presenting the raw number as comparable.
+
+`npm run smoke` checks the formula against the published worked example (ED091741: 203 words, 16 T-units,
+frequencies `12.7, .87, 8.2, 6.3, 5, 5, 18, 4, 3, 2` → Total 42.62 → SDS 2.7 → grade 4.0) before any
+heuristic runs, then pins the sample document's tally (163 words, 16 T-units, SDS 1.70) and the T-unit
+decisions (coordination splits, verb-phrase coordination does not, lists do not).
+
+Sources: Golub (1973), ED091741; Kidder & Golub (1974), ED090304; O'Neal et al. (1983), ED237558.
+The extraction audit and the staged plan are in `docs/gsds-feasibility.md`.
+
 ## Layout rules
 
 Pane sizes are owned by the splitters, never by content. Concretely:
@@ -442,6 +489,10 @@ already moved. `npm run ui-check` exists to catch exactly that.
 
 - English-only heuristics; no POS tagger, so words that are both nouns and verbs (`walk`, `plan`)
   are always counted as verbs, and rare verbs are missed.
+- The GSDS clause variables (1–4) inherit that limit: an unpunctuated relative clause is over-captured
+  by the span rule, and a list item containing a relative clause can be mistaken for a coordinated
+  clause. Variable 10 counts participial adjectives. Each annotation names its rule; the smoke test
+  pins the known over-capture rather than pretending it away.
 - Analysis runs on every keystroke for the whole document. Fine to ~100 KB; beyond that a worker
   and/or debounce is the next step.
 - No shareable permalinks yet (only `localStorage`).

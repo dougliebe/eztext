@@ -9,11 +9,9 @@
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
 ## In progress
-- **GSDS tool** (`feat/gsds-tool`, worktree `D:/ANALYTICS/eztext-gsds`): formula verified against the
-  primary documents (ED091741 worked example reproduces 42.62 → SDS 2.7 exactly). Extraction audit in
-  `docs/gsds-feasibility.md`: 5/10 variables are deterministic token/orthographic counts, 4/10 share one
-  clause-segmentation dependency, gerunds/participles/absolutes are a documented proxy. No code yet —
-  three decisions (V6 be/have mode, sample-length handling, V10) are listed at the end of the doc.
+- **GSDS Stage 1 is implemented and verified** on `feat/gsds-tool` (worktree `D:/ANALYTICS/eztext-gsds`).
+  Remaining: a windowed score for documents past ~200 words (currently an amber hint), and optionally a
+  POS tagger from the local model process to replace the suffix heuristics for variables 2–4 and 10.
 
 ## Completed
 - Project scaffold: Vite 5, React 18, strict TS, dark-theme design tokens, `dev`/`build`/`preview`/`typecheck`/`smoke` scripts.
@@ -121,10 +119,20 @@
   colour from the heat ramp (`AnnotationDraft.color`). Selecting a shaded word pins an inspector
   at the top of the results pane showing the model's whole distribution at that position (probability
   bars, bits, bits saved) and which of them was the word actually written.
+- **Golub Syntactic Density Score** (`core/gsds.ts` + `core/syntax.ts` + `tools/gsds.tool.ts`):
+  the ten published variables, weights, `Total = Σ weight × frequency`, `SDS = Total ÷ T-units` and the
+  grade conversion. Formula checked against ED091741's worked example with no heuristics in the loop
+  (`scoreGsds`); sample tally pinned at 163 words / 16 T-units / SDS 1.70. Five variables are
+  closed-class counts; variables 1–4 share the T-unit/clause heuristics; variable 10 is the original
+  program's suffix proxy. `Be / have` is an option (formula auxiliary-only vs the 1974 program's
+  all-forms, since the paper measured the gap). The length dependence (Belanger 1978) is surfaced as an
+  amber hint past 400 words. Smoke pins the known relative-clause over-capture rather than hiding it.
+  Full audit: `docs/gsds-feasibility.md`.
 
 ## Next steps
-- GSDS tool: build Stage 1 (Tier A variables + T-unit splitter) once the three decisions in
-  `docs/gsds-feasibility.md` are settled.
+- GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long
+  documents get a comparable number instead of only the amber caveat.
+- Optional: POS tagging from the local model process to firm up variables 2–4 and 10.
 - Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded
   word) — the data is already in the tool's annotations as `data.gain`.
 - Surprisal windows arrive all at once; streaming them per window would give progress on long documents.
@@ -205,5 +213,10 @@
   it. If it recurs: restart the dev server (`rm -rf node_modules/.vite` first if it exits with EPERM).
 - Heuristic (not statistical) NLP: english lexicon + morphology for verbs, vowel-group syllable
   estimate. Tools state their limits through each annotation's `detail` field, not through footnotes.
+- **GSDS mirrors the published instrument where it documented its rules** — the `-ing`/`-ed`/`-en`
+  proxy for verbals, `for` after a comma as a coordinator, time adverbs and subordinators counted in
+  both variables — rather than "fixing" them, so scores stay comparable to the published norms. The
+  two places the sources disagree (be/have auxiliary vs all forms; the length-bound formula) are an
+  option and a caveat, never a silent choice.
 
 _Last updated: 2026-09-27_

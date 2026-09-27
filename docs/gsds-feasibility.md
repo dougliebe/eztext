@@ -200,3 +200,48 @@ Staged plan:
    length-bound score with a warning, or ship a corrected rate-based variant?
 3. **V10:** ship the documented suffix proxy, or leave it out until a tagger is
    available and show a 9-variable partial score instead?
+
+## Stage 1 shipped (2026-09-27)
+
+The three decisions above were taken as follows:
+
+1. **V6** is a tool option, `auxiliary` (the formula, default) or `all` (the 1974
+   program). The stat reports the active count; the formula mode's hint also
+   reports the all-forms count, so the divergence is visible without a re-run.
+2. **Length** is surfaced, not corrected yet: the SDS stat turns amber past 400
+   words and its hint names the ~200-word norming. Windowing (score ~200-word
+   blocks at sentence boundaries and average) remains open.
+3. **V10** ships the documented suffix proxy with a small exclusion list, because
+   a nine-variable partial score would be less faithful than an openly noisy ten.
+
+What was built:
+
+- `core/syntax.ts` — punctuation-aware token neighbours, T-unit splitter (with
+  the original program's `for` rule and a verb lookahead for clause candidates),
+  subordinate-clause spans, and the shared verb-ish tests.
+- `core/gsds.ts` — the closed-class lexicons, the ten frequencies, the published
+  weights and grade conversion, and `scoreGsds`, which is checked against
+  ED091741's worked example with no heuristics in the loop.
+- `tools/gsds.tool.ts` — grouped annotations per variable plus optional T-unit and
+  clause layers, and stats that show every frequency with its weight and
+  weighted contribution.
+- `dev/smoke.ts` — the published example; pinned sample counts (163 words,
+  16 T-units, SDS 1.70); T-unit decisions (coordination splits, verb-phrase
+  coordination and lists do not); be/have copula vs auxiliary; possessives and
+  contractions; infinitival `to`; empty/tiny inputs; and the documented relative
+  clause over-capture.
+
+Measured on the bundled sample: 163 words / 11 sentences / 16 T-units /
+13 subordinate clauses; frequencies 10.19, 0.81, 6.19, 4.92, 3, 3, 5, 0, 6, 3
+(variables 1–10); Total 27.16; SDS 1.70; grade 2.50 (linear), table band 2.
+
+The paragraph on the sample's clause spans is the honest one: the 30-word
+coordinated unit that ends `...a reader must decode twice before understanding
+them` still over-captures its trailing relative clause, and the list item
+`and a handful of verbs that carry the argument forward` is split off as a
+T-unit because it contains a relative clause. Both are pinned in the smoke test
+so a future heuristic change is deliberate.
+
+Still open: the sliding/windowed score for long documents, and optionally a
+POS tagger from the local model process to replace the suffix heuristics for
+variables 2–4 and 10.

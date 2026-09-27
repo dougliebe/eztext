@@ -9,6 +9,8 @@
  *   2. every resolved annotation appears in at least one segment;
  *   3. layers inside a segment are ordered widest → narrowest.
  */
+import { analyseGsds, gradeForSds, GSDS_VARIABLES, GSDS_WEIGHTS, scoreGsds } from '../core/gsds';
+import { gsdsTool } from '../tools/gsds.tool';
 import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
 import { scoreWindow, summarise, surprisalScale } from '../core/surprisal';
 import { surprisalTool } from '../tools/surprisal.tool';
@@ -113,6 +115,212 @@ function main(): void {
     const actual = isFamiliarWord(word);
     check(`  ${word} → ${expected ? 'familiar' : 'unfamiliar'}`, actual === expected, actual !== expected ? `got ${actual}` : '');
   }
+
+  console.log(`\n${RULE}\nGolub Syntactic Density Score`);
+
+  // The formula first, with no heuristics in the loop. ED091741's worked example
+  // lists these frequencies for a 203-word, 16-T-unit sample and prints
+  // Total 42.62 → SDS 2.7 → grade 4.0.
+  const publishedFrequencies = [12.7, 0.87, 8.2, 6.3, 5, 5, 18, 4, 3, 2];
+  const published = scoreGsds(publishedFrequencies, 16);
+  check(
+    'weights match Golub (1973)',
+    GSDS_WEIGHTS.every(
+      (weight, index) => weight === [0.95, 0.9, 0.2, 0.5, 0.65, 0.4, 0.75, 0.7, 0.6, 0.85][index],
+    ),
+    GSDS_WEIGHTS.join(', '),
+  );
+  check(
+    'contributions are weight × frequency',
+    published.contributions.every(
+      (value, index) => Math.abs(value - GSDS_WEIGHTS[index] * publishedFrequencies[index]) < 1e-9,
+    ),
+  );
+  check(
+    'the worked example reproduces the published total',
+    Math.abs(published.total - 42.62) < 0.1 && Math.abs(published.sds - 2.66) < 0.01,
+    `total ${published.total.toFixed(2)} vs 42.62; SDS ${published.sds.toFixed(2)} vs 2.7`,
+  );
+  check(
+    'the conversion table is the linear scale it claims to be',
+    [0.5, 1.3, 2.9, 6.9, 10.9].every((sds, index) => Math.abs(gradeForSds(sds) - [1, 2, 4, 9, 14][index]) < 1e-9),
+    [0.5, 1.3, 2.9, 6.9, 10.9].map((sds) => `${sds}→${gradeForSds(sds).toFixed(1)}`).join(' '),
+  );
+  check('the worked example rounds to grade 4', Math.round(published.grade) === 4, `linear ${published.grade.toFixed(2)}`);
+
+  // Then the heuristic analysis of the sample document. The counts are pinned:
+  // changing a lexicon or a boundary rule should be a deliberate edit that shows
+  // up here, not a silent drift in the published score.
+  const gsds = analyseGsds(SAMPLE_TEXT);
+  console.log(
+    `  ${gsds.words} words · ${gsds.sentences} sentences · ${gsds.tUnits} T-units · ${gsds.subordinateClauses} clauses`,
+  );
+  for (const variable of GSDS_VARIABLES) {
+    console.log(
+      `   ${variable.label.padEnd(32)} ${gsds.frequencies[variable.id].toFixed(2).padStart(7)}  × ${variable.weight.toFixed(2)} = ${gsds.contributions[variable.id].toFixed(2).padStart(6)}`,
+    );
+  }
+  console.log(
+    `   ${'Total'.padEnd(32)} ${''.padStart(7)}  ${''.padStart(11)} ${gsds.total.toFixed(2).padStart(6)}`,
+  );
+  console.log(`   SDS = ${gsds.total.toFixed(2)} ÷ ${gsds.tUnits} = ${gsds.sds.toFixed(2)} → grade ${Math.round(gsds.grade)}`);
+
+  check(
+    'sample counts match the metric counts',
+    gsds.words === metrics.words && gsds.sentences === metrics.sentences,
+    `${gsds.words}/${metrics.words} words, ${gsds.sentences}/${metrics.sentences} sentences`,
+  );
+  check(
+    'sample frequencies are pinned',
+    gsds.tUnits === 16 &&
+      gsds.subordinateClauses === 13 &&
+      gsds.frequencies.modals === 3 &&
+      gsds.frequencies.beHave === 3 &&
+      gsds.beHaveAll === 9 &&
+      gsds.frequencies.prepositions === 5 &&
+      gsds.frequencies.possessives === 0 &&
+      gsds.frequencies.timeAdverbs === 6 &&
+      gsds.frequencies.verbals === 3,
+    `T-units ${gsds.tUnits}, clauses ${gsds.subordinateClauses}, m/bh/pp/poss/time/verbal ` +
+      `${gsds.frequencies.modals}/${gsds.frequencies.beHave}/${gsds.frequencies.prepositions}/${gsds.frequencies.possessives}/${gsds.frequencies.timeAdverbs}/${gsds.frequencies.verbals}`,
+  );
+  check(
+    'sample score is finite and in range',
+    Number.isFinite(gsds.sds) && gsds.sds > 0 && gsds.sds < 10.9 && Math.abs(gsds.sds - 1.7) < 0.05,
+    `SDS ${gsds.sds.toFixed(2)}, grade ${gsds.grade.toFixed(1)}`,
+  );
+
+  // Main-clause words are everything outside the merged clause spans, so the two
+  // clause-length variables must add back to the document's word count.
+  check(
+    'clause lengths account for every word',
+    Math.abs(
+      gsds.frequencies.mainClauseLength * gsds.tUnits +
+        gsds.frequencies.subordinateClauseLength * gsds.subordinateClauses -
+        gsds.words,
+    ) < 1e-9,
+    `${(gsds.frequencies.mainClauseLength * gsds.tUnits).toFixed(1)} main + ${(
+      gsds.frequencies.subordinateClauseLength * gsds.subordinateClauses
+    ).toFixed(1)} sub = ${gsds.words}`,
+  );
+
+  // Structural invariants: T-units tile the words exactly once and every clause
+  // sits inside one. This is what keeps variables 1–4 finite on any input.
+  const unitWords = gsds.tUnitRanges.reduce((sum, unit) => sum + unit.words, 0);
+  const unitsOrdered = gsds.tUnitRanges.every(
+    (unit, index) => index === 0 || unit.start >= gsds.tUnitRanges[index - 1].end,
+  );
+  check(
+    'T-units tile the words exactly once',
+    unitWords === gsds.words && unitsOrdered,
+    `${unitWords} words in ${gsds.tUnitRanges.length} units`,
+  );
+  check(
+    'every T-unit has at least one word',
+    gsds.tUnitRanges.every((unit) => unit.words > 0 && unit.end > unit.start),
+  );
+  check(
+    'clauses sit inside T-units',
+    gsds.clauseRanges.every((clause) =>
+      gsds.tUnitRanges.some((unit) => clause.start >= unit.start && clause.end <= unit.end),
+    ),
+    `${gsds.clauseRanges.length} clauses`,
+  );
+  check(
+    'features are in bounds and label the covered text',
+    gsds.features.every(
+      (feature) =>
+        feature.start >= 0 &&
+        feature.end <= SAMPLE_TEXT.length &&
+        SAMPLE_TEXT.slice(feature.start, feature.end) === feature.label,
+    ),
+    `${gsds.features.length} features`,
+  );
+
+  // T-unit decisions are the part of the score a reader cannot see from the top
+  // line, so the important ones are pinned explicitly.
+  const tUnitsOf = (text: string) => analyseGsds(text).tUnits;
+  check('coordinated main clauses are separate T-units', tUnitsOf('I will go and she can stay.') === 2);
+  check('a coordinated verb phrase stays one T-unit', tUnitsOf('I will go and stay.') === 1);
+  check('a comma before the coordinator is still a clause joint', tUnitsOf('I came, and I saw.') === 2);
+  check('a three-item list stays one T-unit', tUnitsOf('She bought apples, oranges, and pears.') === 1);
+  check(
+    'base-form verbs are recognised as clause verbs',
+    analyseGsds('They run when the sun sets.').subordinateClauses === 1,
+  );
+
+  // Be/have: the two published readings and the copula they disagree about.
+  check('a copula is not an auxiliary', analyseGsds('The sky is blue.').frequencies.beHave === 0);
+  check('a progressive is an auxiliary', analyseGsds('She is running.').frequencies.beHave === 1);
+  check('a perfect is an auxiliary', analyseGsds('They have gone.').frequencies.beHave === 1);
+  check(
+    'the 1974 mode counts every form, the formula only the helpers',
+    analyseGsds('The sky is blue.', { beHave: 'all' }).frequencies.beHave === 1 &&
+      analyseGsds('The sky is blue.').beHaveAll === 1,
+  );
+
+  // Possessives, infinitives and the form-based time adverbs.
+  check('possessive nouns are counted', analyseGsds("John's car was sold.").frequencies.possessives === 1);
+  check('plural possessives are counted', analyseGsds("Students' books were returned.").frequencies.possessives === 1);
+  check('possessive pronouns are counted', analyseGsds('Its colour faded.').frequencies.possessives === 1);
+  check(
+    'a contraction is not a possessive',
+    analyseGsds("It's mine.").frequencies.possessives === 1, // “mine”, not “it's”
+  );
+  check(
+    'infinitive “to” is not a preposition',
+    analyseGsds('I want to be here and to go home.').frequencies.prepositions === 0,
+  );
+  check(
+    'time adverbs are counted by form, as the instrument did',
+    analyseGsds('Once more, then.').frequencies.timeAdverbs === 2,
+  );
+
+  // Documented limitations are pinned rather than denied: a relative clause with
+  // no punctuation after it is over-captured by the span rule.
+  const relative = analyseGsds('The book that I read was good.');
+  check('relative clauses are counted', relative.subordinateClauses === 1);
+  check(
+    'an interrogative “who” is not a relative clause',
+    analyseGsds('Who goes there? She left.').subordinateClauses === 0,
+  );
+  check(
+    'unpunctuated relative clauses over-capture (documented)',
+    relative.frequencies.subordinateClauseLength === 5,
+    `${relative.frequencies.subordinateClauseLength} words vs the true 3`,
+  );
+
+  // Empty and tiny inputs must degrade instead of producing NaN.
+  const tiny = ['', 'Hello', '.'].map((text) => analyseGsds(text));
+  check(
+    'empty input degrades to zeros',
+    tiny[0].tUnits === 0 && tiny[0].sds === 0 && Number.isFinite(tiny[0].sds),
+  );
+  check(
+    'one-word input is finite',
+    tiny[1].tUnits === 1 && Number.isFinite(tiny[1].sds) && tiny[1].frequencies.wordsPerTUnit === 1,
+  );
+
+  // The tool option must move the count, and every annotation must name the
+  // group and rule that produced it.
+  const auxiliaryRun = gsdsTool.run({
+    text: 'The sky is blue. She is running.',
+    options: { beHave: 'auxiliary' },
+  });
+  const allFormsRun = gsdsTool.run({ text: 'The sky is blue. She is running.', options: { beHave: 'all' } });
+  const beHaveAnnotations = (run: typeof auxiliaryRun) =>
+    (run.annotations ?? []).filter((annotation) => annotation.group === 'be/have').length;
+  check(
+    'the tool option switches the be/have reading',
+    beHaveAnnotations(auxiliaryRun) === 1 && beHaveAnnotations(allFormsRun) === 2,
+    `auxiliary ${beHaveAnnotations(auxiliaryRun)}, all ${beHaveAnnotations(allFormsRun)}`,
+  );
+  check(
+    'every GSDS annotation names its rule',
+    (auxiliaryRun.annotations ?? []).every(
+      (annotation) => Boolean(annotation.group) && Boolean(annotation.detail),
+    ),
+  );
 
   console.log(`\n${RULE}\nCorpus comparison — ${CLEAR_CORPUS.name}, n=${CLEAR_CORPUS.n}`);
   const comparisons: Array<[string, number, keyof typeof CLEAR_CORPUS.metrics]> = [
