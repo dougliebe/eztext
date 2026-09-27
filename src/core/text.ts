@@ -182,6 +182,43 @@ export function splitSentences(text: string): TextRange[] {
   return out;
 }
 
+/** True when the token opens with a capital letter. */
+function isCapitalised(text: string): boolean {
+  const first = text.charAt(0);
+  return first !== first.toLowerCase() && first === first.toUpperCase();
+}
+
+/**
+ * Token start offsets that look like proper nouns: capitalised, and not the
+ * first word of a sentence.
+ *
+ * A heuristic, not named-entity recognition — it cannot tell that a name opens
+ * a sentence (English capitalises there anyway), so sentence-initial names still
+ * count. The Common words tool's “Ignore names” option, `% unfamiliar` and its
+ * heatmap all read the same set, so none of them can disagree about which
+ * tokens were skipped.
+ */
+export function properNounStarts(text: string, tokens: WordToken[]): Set<number> {
+  const sentences = splitSentences(text);
+  const out = new Set<number>();
+  let sentence = 0;
+  let seenInSentence = false;
+
+  for (const token of tokens) {
+    while (sentence < sentences.length && token.start >= sentences[sentence].end) {
+      sentence += 1;
+      seenInSentence = false;
+    }
+    if (!seenInSentence) {
+      seenInSentence = true;
+      continue;
+    }
+    if (isCapitalised(token.text)) out.add(token.start);
+  }
+
+  return out;
+}
+
 /* ------------------------------------------------------------------ */
 /* Misc helpers                                                        */
 /* ------------------------------------------------------------------ */

@@ -13,7 +13,7 @@ import { mixHex } from './color';
 import { COMMON_WORD_FLOOR, isCommonWord } from './data/common-words';
 import { FUNCTION_WORDS } from './data/function-words';
 import type { MetricNorm } from './data/corpus-norms';
-import { countSyllables, splitParagraphs, splitSentences, tokenizeWords } from './text';
+import { countSyllables, properNounStarts, splitParagraphs, splitSentences, tokenizeWords } from './text';
 
 /** Words with at least this many syllables are "polysyllabic". */
 export const POLYSYLLABLE_THRESHOLD = 3;
@@ -27,6 +27,16 @@ export const WORDS_PER_MINUTE = 200;
  * consistent.
  */
 export const MIN_COMPARABLE_WORDS = 20;
+
+/**
+ * Whether `% unfamiliar` ignores proper nouns by default.
+ *
+ * The Common words tool exposes this as “Ignore names”, on by default: a name is
+ * not vocabulary with a simpler synonym, so flagging it asks for a replacement
+ * that does not exist. The tool, the metric and the heatmap all read the same
+ * switch, so the tool's count equals `% unfamiliar` either way.
+ */
+export const IGNORE_NAMES_DEFAULT = true;
 
 /**
  * How many standard deviations a value sits from the CLEAR corpus mean.
@@ -156,7 +166,10 @@ export interface DocumentMetrics {
   /** Estimated with the vowel-group heuristic in `core/text.ts`. */
   syllables: number;
   polysyllables: number;
-  /** Words that are not on the common-word list, or a variant of one. */
+  /**
+   * Words that are not on the common-word list, or a variant of one. Figures are
+   * never counted, and proper nouns only when `ignoreNames` is off.
+   */
   unfamiliarWords: number;
   readingMinutes: number;
 
@@ -189,6 +202,9 @@ export interface DocumentMetrics {
 export function isFamiliarWord(rawWord: string, threshold: number = COMMON_WORD_FLOOR): boolean {
   const word = rawWord.toLowerCase();
   if (!word) return true;
+  // A token with no letters is a figure ("2024", "3-4"): it is not vocabulary,
+  // so it is never “unfamiliar”, and there is no simpler word to suggest for it.
+  if (!/\p{L}/u.test(word)) return true;
   // Closed-class words first: the prevalence survey scores them erratically, and
   // a raised threshold must not turn "is" or "the" into unfamiliar vocabulary.
   if (FUNCTION_WORDS.has(word)) return true;
@@ -239,9 +255,18 @@ export function isFamiliarWord(rawWord: string, threshold: number = COMMON_WORD_
   return stems.some((stem) => isCommonWord(stem, threshold));
 }
 
-export function computeMetrics(text: string, { threshold = COMMON_WORD_FLOOR }: { threshold?: number } = {}): DocumentMetrics {
+export function computeMetrics(
+  text: string,
+  {
+    threshold = COMMON_WORD_FLOOR,
+    ignoreNames = IGNORE_NAMES_DEFAULT,
+  }: { threshold?: number; ignoreNames?: boolean } = {},
+): DocumentMetrics {
   const tokens = tokenizeWords(text);
   const words = tokens.length;
+  // Names are looked up once per document; a figure needs no lookup at all
+  // because `isFamiliarWord` answers it before the list is consulted.
+  const names = ignoreNames ? properNounStarts(text, tokens) : null;
 
   let letters = 0;
   let syllables = 0;
@@ -255,7 +280,7 @@ export function computeMetrics(text: string, { threshold = COMMON_WORD_FLOOR }: 
     syllables += syllableCount;
     if (syllableCount >= POLYSYLLABLE_THRESHOLD) polysyllables += 1;
 
-    if (!isFamiliarWord(token.lower, threshold)) unfamiliarWords += 1;
+    if (!names?.has(token.start) && !isFamiliarWord(token.lower, threshold)) unfamiliarWords += 1;
   }
 
   const sentences = splitSentences(text).length;

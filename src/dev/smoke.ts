@@ -158,11 +158,35 @@ function main(): void {
     ['zygote', false], // below the prevalence threshold
     ['brutalist', false], // absent from the source entirely
     ['revisualization', false], // absent, and not rescued by its stem
+    ['1954', true], // a figure, not a word
   ];
   for (const [word, expected] of familiarity) {
     const actual = isFamiliarWord(word);
     check(`  ${word} → ${expected ? 'familiar' : 'unfamiliar'}`, actual === expected, actual !== expected ? `got ${actual}` : '');
   }
+
+  // Names are a shared rule, not a tool-side filter: the metric, the heatmap and
+  // the Common words tool all read the same set of sentences, so their counts
+  // cannot drift apart when “Ignore names” is on.
+  const namesText = 'The antediluvian zygote visited Bletchley in 1954.';
+  const namesIgnored = computeMetrics(namesText);
+  const namesCounted = computeMetrics(namesText, { ignoreNames: false });
+  check(
+    'a mid-sentence name is unfamiliar unless names are ignored',
+    namesIgnored.unfamiliarWords + 1 === namesCounted.unfamiliarWords,
+    `${namesIgnored.unfamiliarWords} with names ignored, ${namesCounted.unfamiliarWords} without`,
+  );
+  check(
+    'the unfamiliar heatmap skips the same name the metric does',
+    buildHeatmap(namesText, 'unfamiliarShare').length === namesIgnored.unfamiliarWords,
+    `${buildHeatmap(namesText, 'unfamiliarShare').length} shaded vs ${namesIgnored.unfamiliarWords} in the metric`,
+  );
+  check(
+    'a name that opens a sentence still counts (the heuristic cannot see it)',
+    computeMetrics('Bletchley is quiet.').unfamiliarWords ===
+      computeMetrics('Bletchley is quiet.', { ignoreNames: false }).unfamiliarWords,
+    'sentence-initial names are indistinguishable from English capitalisation',
+  );
 
   console.log(`\n${RULE}\nGolub Syntactic Density Score`);
 
@@ -1317,22 +1341,23 @@ function main(): void {
   );
 
   // The sample happens to have no mid-sentence capitals, so drive the two cases
-  // the filter is meant to separate: a name inside a sentence is skipped, the
-  // same word opening a sentence is not (that is just orthography).
+  // the filter is meant to separate: a name inside a sentence is skipped *by
+  // default*, while the same word opening a sentence is not (that is just
+  // orthography). Turning the option off keeps the name.
   const nameProbe = 'The manager, Zoltan, revised everything.';
   const wordAt = (run: { annotations?: AnnotationDraft[] }, start: number) =>
     run.annotations?.find((annotation) => annotation.start === start) !== undefined;
   const nameStart = nameProbe.indexOf('Zoltan');
-  const keptByDefault = commonWordsTool.run({ text: nameProbe, options: {} });
-  const skippedByName = commonWordsTool.run({ text: nameProbe, options: { ignoreNames: true } });
+  const byDefault = commonWordsTool.run({ text: nameProbe, options: {} });
+  const keptByOption = commonWordsTool.run({ text: nameProbe, options: { ignoreNames: false } });
   const openingProbe = commonWordsTool.run({ text: 'Zoltan revised everything.', options: { ignoreNames: true } });
   check(
     'the name filter skips a mid-sentence capital only',
-    wordAt(keptByDefault, nameStart) &&
-      !wordAt(skippedByName, nameStart) &&
+    !wordAt(byDefault, nameStart) &&
+      wordAt(keptByOption, nameStart) &&
       wordAt(openingProbe, 0) &&
-      skippedByName.stats?.find((stat) => stat.id === 'common-words.names')?.value === 1,
-    `mid-sentence kept=${wordAt(keptByDefault, nameStart)}, skipped=${!wordAt(skippedByName, nameStart)}, sentence-initial kept=${wordAt(openingProbe, 0)}`,
+      byDefault.stats?.find((stat) => stat.id === 'common-words.names')?.value === 1,
+    `mid-sentence skipped by default=${!wordAt(byDefault, nameStart)}, kept with the option off=${wordAt(keptByOption, nameStart)}, sentence-initial kept=${wordAt(openingProbe, 0)}`,
   );
   check(
     'asking for no suggestions still highlights the words',

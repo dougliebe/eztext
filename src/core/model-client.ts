@@ -126,7 +126,7 @@ export async function continueFrom(
  */
 export async function fetchSimilarity(
   text: string,
-  options: { k?: number; threshold?: number; signal?: AbortSignal } = {},
+  options: { k?: number; threshold?: number; ignoreNames?: boolean; signal?: AbortSignal } = {},
 ): Promise<SimilaritySignal | null> {
   if (!text.trim()) return null;
 
@@ -134,7 +134,12 @@ export async function fetchSimilarity(
     const response = await fetch(`${MODEL_ENDPOINT}/similarity`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, k: options.k, threshold: options.threshold }),
+      body: JSON.stringify({
+        text,
+        k: options.k,
+        threshold: options.threshold,
+        ignoreNames: options.ignoreNames,
+      }),
       signal: options.signal,
     });
     if (!response.ok) return null;

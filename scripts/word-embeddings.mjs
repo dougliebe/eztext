@@ -106,7 +106,9 @@ function loadCore() {
 
   core = {
     isFamiliarWord: require(resolve(CORE_DIR, 'metrics.cjs')).isFamiliarWord,
+    IGNORE_NAMES_DEFAULT: require(resolve(CORE_DIR, 'metrics.cjs')).IGNORE_NAMES_DEFAULT,
     tokenizeWords: require(resolve(CORE_DIR, 'text.cjs')).tokenizeWords,
+    properNounStarts: require(resolve(CORE_DIR, 'text.cjs')).properNounStarts,
     COMMON_WORDS: require(resolve(CORE_DIR, 'common-words.cjs')).COMMON_WORDS,
     COMMON_WORD_FLOOR: require(resolve(CORE_DIR, 'common-words.cjs')).COMMON_WORD_FLOOR,
   };
@@ -251,17 +253,28 @@ function rank(vector, { words, dims, vectors }, k, threshold) {
  * The set of words to look up is decided here, not by the caller, so the app
  * only has to say "here is the document".
  */
-export async function similarityForText(text, { k = TOP_K, threshold } = {}) {
+export async function similarityForText(text, { k = TOP_K, threshold, ignoreNames } = {}) {
   const started = performance.now();
-  const { isFamiliarWord, tokenizeWords, COMMON_WORD_FLOOR } = loadCore();
+  const {
+    isFamiliarWord,
+    IGNORE_NAMES_DEFAULT,
+    tokenizeWords,
+    properNounStarts,
+    COMMON_WORD_FLOOR,
+  } = loadCore();
   const floor = Number.isFinite(threshold) ? Math.max(COMMON_WORD_FLOOR, threshold) : COMMON_WORD_FLOOR;
   const idx = await loadIndex();
 
+  // The same token set the tool and `% unfamiliar` use: names are skipped while
+  // “Ignore names” is on (the app's default), and figures never reach the list.
+  const tokens = tokenizeWords(text);
+  const names = (ignoreNames ?? IGNORE_NAMES_DEFAULT) ? properNounStarts(text, tokens) : null;
+
   const candidates = [];
   const seen = new Set();
-  for (const token of tokenizeWords(text)) {
+  for (const token of tokens) {
     const word = token.lower.replace(/[^a-z'-]/g, '');
-    if (!word || seen.has(word) || isFamiliarWord(word, floor)) continue;
+    if (!word || seen.has(word) || names?.has(token.start) || isFamiliarWord(word, floor)) continue;
     seen.add(word);
     candidates.push(word);
   }

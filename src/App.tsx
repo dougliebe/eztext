@@ -10,7 +10,7 @@ import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
 import { heatGradient } from './core/color';
 import { buildHeatmap, HEAT_METRICS, type HeatMetricId, type HeatMetricInfo } from './core/heatmap';
 import { checkHealth, fetchSimilarity, ModelOfflineError, scoreText } from './core/model-client';
-import { computeMetrics, describeNorm, deviationColor, EASY_PERCENTILE, formatPercentile, formatZ, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileFromZ, zScore } from './core/metrics';
+import { computeMetrics, describeNorm, deviationColor, EASY_PERCENTILE, formatPercentile, formatZ, IGNORE_NAMES_DEFAULT, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileFromZ, zScore } from './core/metrics';
 import type { SurprisalScores } from './core/surprisal';
 import { mergeSimilarity, type SimilaritySignal } from './core/similarity';
 import type { ToolSignals } from './core/types';
@@ -144,6 +144,10 @@ export default function App() {
     [options],
   );
 
+  // “Ignore names” is the same deal: it is the tool's option, and the metric and
+  // heatmap read it too, so a name the panel skips is out of `% unfamiliar` as well.
+  const ignoreNames = Boolean(options['common-words']?.ignoreNames ?? IGNORE_NAMES_DEFAULT);
+
   // Semantic neighbours are an upgrade, not a mode: fetched in the background
   // whenever an enabled tool asks for them, merged by word so editing does not
   // throw away answers that are still true, and silently absent when the model
@@ -151,20 +155,24 @@ export default function App() {
   useEffect(() => {
     if (!neededSignals.has('similarity')) return;
     const controller = new AbortController();
-    void fetchSimilarity(deferredText, { signal: controller.signal, threshold: wordThreshold }).then((result) => {
+    void fetchSimilarity(deferredText, {
+      signal: controller.signal,
+      threshold: wordThreshold,
+      ignoreNames,
+    }).then((result) => {
       if (result) setSemantic((previous) => mergeSimilarity(previous, result));
     });
     return () => controller.abort();
-  }, [neededSignals, deferredText, wordThreshold]);
+  }, [neededSignals, deferredText, wordThreshold, ignoreNames]);
 
   const doc = useMemo(
-    () => computeMetrics(deferredText, { threshold: wordThreshold }),
-    [deferredText, wordThreshold],
+    () => computeMetrics(deferredText, { threshold: wordThreshold, ignoreNames }),
+    [deferredText, wordThreshold, ignoreNames],
   );
 
   const heatmap = useMemo(
-    () => (heatMetric ? buildHeatmap(deferredText, heatMetric, { threshold: wordThreshold }) : []),
-    [deferredText, heatMetric, wordThreshold],
+    () => (heatMetric ? buildHeatmap(deferredText, heatMetric, { threshold: wordThreshold, ignoreNames }) : []),
+    [deferredText, heatMetric, wordThreshold, ignoreNames],
   );
   const heatInfo = heatMetric ? HEAT_METRICS[heatMetric] : null;
 
@@ -325,7 +333,7 @@ export default function App() {
           <Metric
             label="% unfamiliar"
             value={`${round(doc.unfamiliarShare * 100, 1)}%`}
-            hint={`Share of words outside the ${countCommonWords(wordThreshold).toLocaleString('en-US')} words most US readers know (prevalence > ${wordThreshold}), and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words).`}
+            hint={`Share of words outside the ${countCommonWords(wordThreshold).toLocaleString('en-US')} words most US readers know (prevalence > ${wordThreshold}), and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words${ignoreNames ? ', proper nouns excluded' : ''}).`}
             percent
             deviation={deviation(doc.unfamiliarShare, CLEAR_CORPUS.metrics.unfamiliarShare)}
             heatLabel="mark unfamiliar words"

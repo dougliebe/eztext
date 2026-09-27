@@ -1,7 +1,7 @@
 import { COMMON_WORD_FLOOR, countCommonWords, isCommonWord, prevalenceOf } from '../core/data/common-words';
-import { isFamiliarWord, normalCdf } from '../core/metrics';
+import { IGNORE_NAMES_DEFAULT, isFamiliarWord, normalCdf } from '../core/metrics';
 import { similarity, type SemanticNeighbour } from '../core/similarity';
-import { splitSentences, tokenizeWords } from '../core/text';
+import { properNounStarts, tokenizeWords } from '../core/text';
 import type { AnnotationDraft, Stat, Tool } from '../core/types';
 
 /**
@@ -262,37 +262,6 @@ export function suggestFamiliarWords(
 
 const suggestionCache = new Map<string, WordSuggestion[]>();
 
-/**
- * Offsets of the tokens that open a sentence.
- *
- * Used by `ignoreNames`: a capitalised word *inside* a sentence is probably a
- * name, while one that opens a sentence is just English orthography.
- */
-function sentenceInitialStarts(text: string, tokens: ReturnType<typeof tokenizeWords>): Set<number> {
-  const sentences = splitSentences(text);
-  const starts = new Set<number>();
-  let sentence = 0;
-  let seenInSentence = false;
-
-  for (const token of tokens) {
-    while (sentence < sentences.length && token.start >= sentences[sentence].end) {
-      sentence += 1;
-      seenInSentence = false;
-    }
-    if (!seenInSentence) {
-      starts.add(token.start);
-      seenInSentence = true;
-    }
-  }
-
-  return starts;
-}
-
-function isCapitalised(text: string): boolean {
-  const first = text.charAt(0);
-  return first !== first.toLowerCase() && first === first.toUpperCase();
-}
-
 function describe(word: string, suggestions: WordSuggestion[]): string {
   if (suggestions.length === 0) {
     return (
@@ -384,8 +353,8 @@ export const commonWordsTool: Tool = {
       kind: 'boolean',
       id: 'ignoreNames',
       label: 'Ignore names',
-      default: false,
-      hint: 'Skip capitalised words that do not open a sentence — usually proper nouns. Off by default, so the count matches the topbar’s % unfamiliar.',
+      default: IGNORE_NAMES_DEFAULT,
+      hint: 'Skip capitalised words that do not open a sentence — usually proper nouns. On by default, and % unfamiliar ignores them too.',
     },
   ],
 
@@ -398,11 +367,11 @@ export const commonWordsTool: Tool = {
     const strength = String(options.match ?? 'balanced');
     const minSimilarity = STRENGTH[strength] ?? STRENGTH.balanced;
     const onlyWithMatch = String(options.show ?? 'all') === 'fixable';
-    const ignoreNames = Boolean(options.ignoreNames ?? false);
+    const ignoreNames = Boolean(options.ignoreNames ?? IGNORE_NAMES_DEFAULT);
     const neighbours = signals?.similarity?.words;
 
     const tokens = tokenizeWords(text);
-    const sentenceStarts = ignoreNames ? sentenceInitialStarts(text, tokens) : null;
+    const names = ignoreNames ? properNounStarts(text, tokens) : null;
 
     const annotations: AnnotationDraft[] = [];
     const occurrences = new Map<string, number>();
@@ -415,7 +384,7 @@ export const commonWordsTool: Tool = {
       const word = token.lower;
       if (isFamiliarWord(word, threshold)) continue;
 
-      if (ignoreNames && sentenceStarts && !sentenceStarts.has(token.start) && isCapitalised(token.text)) {
+      if (names?.has(token.start)) {
         ignoredNames += 1;
         continue;
       }

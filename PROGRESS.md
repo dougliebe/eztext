@@ -8,6 +8,8 @@
 - The **Common words tool** is in: it flags exactly what `% unfamiliar` counts and, when a flagged word
   is selected, names the nearest common words — by meaning while the local model is running, by word
   family always. The list is the ~24,600 words most US readers know, so ordinary prose is usually clean.
+  Proper nouns are ignored by default and figures are never unfamiliar, in the tool, the metric and the
+  heatmap alike.
 - The **GSDS tool** (Golub Syntactic Density Score) is in: it ranks the densest T-units, decomposes each
   score into the published variables with the words that earned them, and shows a canonical fix per group.
   `feat/gsds-tool` was merged into `main` (`90f3cb4`, resolved against the common-words/model line) and
@@ -15,9 +17,9 @@
 - Selecting a word now shows **where the model goes next**: five five-word phrases, each from a different
   one of the model's likeliest next pieces (`POST /continue`). The ranked next-token table it replaced
   answered "what word did I miss"; the phrases answer "where is this sentence heading".
-- `main` carries the common-words/model work, the GSDS merge and the inspector gating fix; pushed to
-  `origin/main` in this session.
-- `npm run build`, `npm run smoke` (217 assertions) and `npm run ui-check` (76 assertions in the browser)
+- `main` carries the common-words/model work, the GSDS merge, the inspector gating fix and the
+  name/figure rule; pushed to `origin/main`.
+- `npm run build`, `npm run smoke` (221 assertions) and `npm run ui-check` (79 assertions in the browser)
   all pass on the merged tree.
 
 ## In progress
@@ -155,7 +157,8 @@
   changed): flags every word outside the list and offers replacements for each, grouped by how it can
   be fixed (`base form`, `shorter form`, `similar meaning`, `no match` — which double as the filter
   pills). Options: prevalence threshold, suggestions per word, meaning match, highlight only words with
-  a match, and an opt-in filter for capitalised names that do not open a sentence. Each suggestion also
+  a match, and a filter for capitalised names that do not open a sentence (on by default since the
+  name/figure change below). Each suggestion also
   carries **p(known)** — the stored probit read as a probability (`normalCdf`), shown as a right-aligned
   “Known” column beside the relation, one decimal so the 99.5% ceiling is not rounded up to certainty.
 - **Suggestions are ranked by how much they help, not by string distance**: word family first
@@ -290,6 +293,15 @@ the top of the results pane when something in the preview is selected).
   model work. Verified on the merged tree (typecheck, build, 217 smoke assertions), then the inspector
   tool-gating fix was rebased on top and verified again with the full browser check (76 assertions,
   model process running).
+- **Names are ignored by default and figures are never unfamiliar** (user request): the Common words
+  tool's `Ignore names` option now defaults to on, and `isFamiliarWord` treats a token with no letters
+  as a figure rather than vocabulary. The rule is one shared set (`properNounStarts` in `core/text.ts`),
+  read by the tool, `% unfamiliar`, its heatmap and the embedding service, so the tool's count still
+  equals the metric. The CLEAR norms were regenerated: `unfamiliarShare` moved 5.07% ± 3.94pp →
+  2.30% ± 1.90pp while the other four metrics stayed byte-identical. A probe over the corpus showed
+  about half of what the old count called unfamiliar was names and demonyms (`Mr`, `England`,
+  `American`, `DNA`) — a reclassification, not a loosening. A name that opens a sentence still counts:
+  capitalisation plus sentence position cannot tell it from English orthography.
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long

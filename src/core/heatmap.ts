@@ -12,8 +12,8 @@
  * unusual for English. Corpus norms stay on the topbar's σ readouts.
  */
 import { COMMON_WORD_FLOOR } from './data/common-words';
-import { isFamiliarWord, POLYSYLLABLE_THRESHOLD } from './metrics';
-import { countSyllables, splitSentences, tokenizeWords } from './text';
+import { IGNORE_NAMES_DEFAULT, isFamiliarWord, POLYSYLLABLE_THRESHOLD } from './metrics';
+import { countSyllables, properNounStarts, splitSentences, tokenizeWords } from './text';
 
 export type HeatMetricId =
   | 'wordsPerSentence'
@@ -60,7 +60,7 @@ export const HEAT_METRICS: Record<HeatMetricId, HeatMetricInfo> = {
     id: 'unfamiliarShare',
     label: '% unfamiliar',
     unit: 'word',
-    legend: 'Shades only words outside the common-word list.',
+    legend: 'Shades only words outside the common-word list. Figures and names do not shade.',
     binary: true,
   },
   syllablesPerWord: {
@@ -111,7 +111,10 @@ function letters(token: string): number {
 export function buildHeatmap(
   text: string,
   metric: HeatMetricId,
-  { threshold = COMMON_WORD_FLOOR }: { threshold?: number } = {},
+  {
+    threshold = COMMON_WORD_FLOOR,
+    ignoreNames = IGNORE_NAMES_DEFAULT,
+  }: { threshold?: number; ignoreNames?: boolean } = {},
 ): HeatSpan[] {
   if (text.length === 0) return [];
 
@@ -184,8 +187,11 @@ export function buildHeatmap(
   }
 
   if (metric === 'unfamiliarShare') {
+    // The same rule the metric counts with: figures never shade (they are not
+    // words), and proper nouns are skipped while the tool is ignoring names.
+    const names = ignoreNames ? properNounStarts(text, tokens) : null;
     return tokens
-      .filter((token) => !isFamiliarWord(token.lower, threshold))
+      .filter((token) => !names?.has(token.start) && !isFamiliarWord(token.lower, threshold))
       .map((token) =>
         span(token, 1, 1, 'unfamiliar', `“${token.text}” is not a word most readers know.`),
       );

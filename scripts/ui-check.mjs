@@ -854,7 +854,58 @@ if (embedHealth?.embeddings) {
   console.log('\n  (skipping the embedding check — start `npm run model` with the similarity endpoint)');
 }
 
-// --- 10. the prevalence threshold -----------------------------------------
+// --- 10. names and figures ------------------------------------------------
+// The Common words tool ignores proper nouns by default and never flags figures,
+// and the topbar metric reads the same rule, so the two stay equal.
+const NAMES_TEXT = 'The antediluvian brutalist edifice obfuscated the zygote at Bletchley in 1954.';
+await page.fill('.input__area', NAMES_TEXT);
+await page.waitForTimeout(300);
+
+const flaggedNow = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('.hl[data-tool="common-words"]')].map((node) => node.textContent),
+  );
+const unfamiliarTitle = () =>
+  page.evaluate(() => {
+    const cell = [...document.querySelectorAll('.metric')].find((node) =>
+      node.textContent?.includes('unfamiliar'),
+    );
+    return cell?.getAttribute('title') ?? '';
+  });
+
+let nameFlagged = await flaggedNow();
+check(
+  'names and figures are left alone by default',
+  ['antediluvian', 'brutalist', 'edifice', 'obfuscated', 'zygote'].every((word) => nameFlagged.includes(word)) &&
+    !nameFlagged.includes('Bletchley') &&
+    !nameFlagged.includes('1954'),
+  nameFlagged.join(' '),
+);
+check(
+  'the topbar metric ignores them the same way',
+  new RegExp(`${nameFlagged.length} of `).test(await unfamiliarTitle()),
+  await unfamiliarTitle(),
+);
+
+// The option is a real switch, not a hardcoded skip: unchecking it brings the
+// name back, and the metric follows.
+await page.locator('.chip', { hasText: 'Common' }).locator('.chip__gear').click();
+await page.waitForSelector('#common-words-ignoreNames');
+await page.locator('#common-words-ignoreNames').uncheck();
+await page.waitForTimeout(300);
+nameFlagged = await flaggedNow();
+check(
+  'unchecking “Ignore names” flags the name again, in the tool and the metric',
+  nameFlagged.includes('Bletchley') &&
+    !nameFlagged.includes('1954') &&
+    new RegExp(`${nameFlagged.length} of `).test(await unfamiliarTitle()),
+  nameFlagged.join(' '),
+);
+await page.locator('#common-words-ignoreNames').check();
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+
+// --- 11. the prevalence threshold -----------------------------------------
 // The dial lives in the tool's settings, but it is not a tool-only setting: the
 // topbar metric is measured against the same list, so both must move together.
 await page.fill('.input__area', SAMPLE);

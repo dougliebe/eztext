@@ -496,6 +496,7 @@ const server = createServer(async (request, response) => {
         await similarityForText(text, {
           ...(Number.isFinite(requestedK) ? { k: requestedK } : {}),
           ...(Number.isFinite(requestedThreshold) ? { threshold: requestedThreshold } : {}),
+          ...(typeof body.ignoreNames === 'boolean' ? { ignoreNames: body.ignoreNames } : {}),
         }),
       );
     } catch (error) {
