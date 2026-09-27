@@ -4,7 +4,7 @@
 - Framework is complete and working: Vite + React + TypeScript SPA with a plugin-shaped tool
   registry, live analysis, overlap-aware highlighting, and a tabbed results pane.
 - Topbar shows 11 always-on document metrics; each of the five ratios carries a **percentile chip**
-  against the CLEAR corpus distribution (`91st`, `22nd`) instead of a σ readout.
+  derived from its z-score against the CLEAR corpus, with a colour-coded font.
 - Pushed to `origin/main`. `main` == `origin/main`, nothing outstanding.
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
@@ -51,21 +51,23 @@
   sentences / 4 paragraphs / 1,015 characters — matching the UI), ratio sanity, and 11 familiarity
   cases. `ui-check` guards topbar height (< 15% of viewport) and that the five language metrics render.
 - **Corpus norms** (`npm run corpus:norms` → `core/data/corpus-norms.ts`): mean and SD of each ratio
-  across 4,724 CLEAR excerpts, so the topbar can show a percentile versus real published prose (σ has since been replaced). The generator
+  across 4,724 CLEAR excerpts, so the topbar can compare against real published prose. The generator
   reads the xlsx with no dependency, finds the `Excerpt` column by header text, and computes metrics by
   bundling `core/metrics.ts` itself — norms cannot drift from the implementation.
-- **Corpus percentiles replace σ** (`formatPercentile` / `percentileOf`): each ratio shows where it sits
-  in the corpus distribution (`91st`, `22nd`) in a small chip, with mean ± SD and n in the tooltip. The
-  generator now emits **empirical quantiles p0…p100** per metric (6 KB total) and the app inverts them by
-  binary search — no normality assumption, which matters because words/sentence spans 3.9…101.5: at +1σ
-  the normal CDF says p84 where the corpus actually says p89. Also exposes a true median (p50 = 20.25
-  words/sentence vs mean 21.28).
-- Tone bands moved from ±1.5σ to percentile tails: ≥ p93 amber, ≤ p7 green. On the sample text that
-  surfaces `chars/word 91st` (long words) while `% unfamiliar` is an unremarkable `66th`.
-- **Percentile chip fonts are colour-coded** on a continuous ramp (`percentileColor`): neutral grey at
-  p50, cooling to green below, warming through amber to red above, with an exponent so the tint shows up
-  outside the middle band rather than only at the extremes. The box stays neutral except in the tails.
-  Pure colour maths lives in `core/color.ts` (`mixHex`), the semantic ramp in `core/metrics.ts`.
+- **Percentile = Φ(z), computed from mean + SD alone** (`percentileFromZ`, Abramowitz & Stegun 7.1.26).
+  The chip shows the percentile (`92nd`) because it reads better; the z-score stays in the tooltip and on
+  `data-z`. No quantile table ships (2.4 KB), and the *cost* of that trade is measured rather than
+  assumed: the generator compares Φ(z) against the corpus's true percentiles and prints the worst error
+  per metric — **8.0 pp for words/sentence**, 4–7 pp for the rest, peaking near the middle of the
+  distribution where the mean/median gap bites. Tails behave. Exact percentiles would need the quantile
+  table back (the previous revision shipped 101 values × 5 metrics, 6.2 KB).
+- Tone bands sit at the 93rd/7th percentile (≈ z ±1.5, which the smoke test asserts they agree with).
+  On the sample text that surfaces `chars/word 92nd` (long words) while `% unfamiliar 63rd` is ordinary.
+- **Chip fonts are colour-coded** on a continuous ramp (`deviationColor`): neutral grey at the corpus
+  mean, cooling to green below, warming through amber to red above, saturating at ±2.5σ, with an exponent
+  so the tint shows up outside the middle band rather than only at the extremes. The box stays neutral
+  except outside ±1.5σ. Pure colour maths lives in `core/color.ts` (`mixHex`), the semantic ramp in
+  `core/metrics.ts`; smoke.ts guards WCAG AA contrast for the whole ramp on paper.
 - Guarded comparisons below 20 words (`MIN_COMPARABLE_WORDS`) — ratios and z-scores are meaningless on
   tiny inputs, so no σ chips render.
 - `ui-check` now fails loudly if the page renders unstyled, instead of reporting a layout catastrophe
@@ -98,8 +100,7 @@
 - Cross-validate our metrics against the corpus's own columns (`Flesch-Reading-Ease`,
   `Flesch-Kincaid-Grade-Level`, `New Dale-Chall Readability Formula`): the xlsx already carries them, so
   the generator could report correlations and expose any weakness in the syllable heuristic.
-- Show the corpus percentile as well as σ (a `+1.4σ` on chars/word is the 92nd percentile — more
-  intuitive for some readers).  ← done, σ removed entirely
+- Show a percentile alongside the z-score  ← done, via the normal CDF (approximate: worst case 8 pp).
 - Surface `% unfamiliar` / polysyllabic share in the Readability tool's stats too (single source of
   truth in `core/metrics.ts` once the tool stops computing its own).
 - Shareable permalinks (encode text + enabled tools + options into the URL hash), regex101-style.
@@ -156,7 +157,8 @@
   mixing two colour systems.
 - **Corpus norms: mean, SD *and* quantiles.** Percentiles are read off the stored distribution rather
   than derived from a z-score. The generator logs the skew per metric (empirical vs normal-CDF
-  percentile at +1σ), which is how that decision got justified with numbers rather than taste.
+  percentile at +1σ), which is how that decision got justified with numbers rather than taste. Kept as a
+  log line after the switch to z-scores.
 - **CLEAR corpus is CC BY-NC-SA 4.0** (non-commercial, share-alike, attribution). Only aggregate
   statistics are committed — never corpus text — and the generated file states the licence. If eztext is
   ever commercialised, this needs a licence review or a different reference corpus.

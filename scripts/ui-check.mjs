@@ -145,6 +145,7 @@ const header = await page.evaluate(() => {
       [...document.querySelectorAll('.metric--clickable')].map((metric) => [
         metric.querySelector('.metric__label').textContent,
         {
+          z: Number(metric.querySelector('.metric__chip').dataset.z),
           percentile: Number(metric.querySelector('.metric__chip').dataset.percentile),
           rgb: (getComputedStyle(metric.querySelector('.metric__chip')).color.match(/[\d.]+/g) ?? []).map(Number),
         },
@@ -164,18 +165,28 @@ check(
   'each language metric carries a percentile chip',
   header.percentileChips.length === requiredMetrics.length &&
     header.percentileChips.every((chip) => /^(<1st|>99th|\d+(st|nd|rd|th))$/.test(chip)),
-  header.percentileChips.join(' '),
+  header.percentileChips.join('  '),
 );
-// The chip's font colour must follow the ramp: the harder percentile is warmer.
-const coolChip = header.chipColours['Words / sentence']; // 22nd on the sample
-const warmChip = header.chipColours['Chars / word']; // 91st on the sample
 check(
-  'chip font colour is coded by percentile',
-  coolChip.percentile < 50 &&
-    warmChip.percentile > 50 &&
+  'the percentile agrees with the z-score behind it',
+  Object.values(header.chipColours).every(({ z, percentile }) => {
+    // Φ(z) is monotonic, so the displayed ordinal must track the stored z.
+    return Number.isFinite(z) && (z > 0.5 ? percentile > 69 : z < -0.5 ? percentile < 31 : true);
+  }),
+  Object.values(header.chipColours)
+    .map(({ z, percentile }) => `z ${z}→p${percentile}`)
+    .join(' '),
+);
+// The chip's font colour must follow the ramp: the harder metric is warmer.
+const coolChip = header.chipColours['Words / sentence']; // z −0.7 on the sample
+const warmChip = header.chipColours['Chars / word']; // z +1.4 on the sample
+check(
+  'chip font colour is coded by z-score',
+  coolChip.z < 0 &&
+    warmChip.z > 0 &&
     coolChip.rgb[1] > coolChip.rgb[0] &&
     warmChip.rgb[0] > warmChip.rgb[1],
-  `p${coolChip.percentile} green-dominant, p${warmChip.percentile} red-dominant`,
+  `z ${coolChip.z} green-dominant, z ${warmChip.z} red-dominant`,
 );
 check(
   'topbar does not squeeze the workbench',
@@ -348,6 +359,8 @@ const chipsFor = async (document) => {
     [...document.querySelectorAll('.metric--clickable')].map((metric) => ({
       label: metric.querySelector('.metric__label').textContent,
       chip: metric.querySelector('.metric__chip')?.textContent ?? null,
+      z: Number(metric.querySelector('.metric__chip')?.dataset.z ?? 'NaN'),
+      percentile: Number(metric.querySelector('.metric__chip')?.dataset.percentile ?? 'NaN'),
       rgb: (getComputedStyle(metric.querySelector('.metric__chip')).color.match(/[\d.]+/g) ?? []).map(Number),
       tone: metric.classList.contains('metric--warn')
         ? 'warn'
@@ -365,10 +378,10 @@ const heavyChars = heavy.find((metric) => metric.label === 'Chars / word');
 check(
   'very long words push chars/word into the amber band',
   heavyChars.tone === 'warn',
-  `${heavyChars.chip} (${heavyChars.tone})`,
+  `z ${heavyChars.z} → p${heavyChars.percentile} (${heavyChars.tone})`,
 );
 check(
-  'extreme percentiles saturate the chip colour',
+  'extreme deviations saturate the chip colour',
   heavyChars.rgb[0] > heavyChars.rgb[1] + 80,
   `rgb(${heavyChars.rgb.join(', ')})`,
 );
@@ -381,12 +394,12 @@ const simplePolys = simple.find((metric) => metric.label === '% polysyllabic');
 check(
   'very short words push chars/word into the green band',
   simpleChars.tone === 'good',
-  `${simpleChars.chip} (${simpleChars.tone})`,
+  `z ${simpleChars.z} → p${simpleChars.percentile} (${simpleChars.tone})`,
 );
 check(
   'a text with no long words lands in the easy tail',
   simplePolys.tone === 'good',
-  `${simplePolys.chip} (${simplePolys.tone})`,
+  `z ${simplePolys.z} → p${simplePolys.percentile} (${simplePolys.tone})`,
 );
 
 await browser.close();

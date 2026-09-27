@@ -28,34 +28,50 @@ export const WORDS_PER_MINUTE = 200;
 export const MIN_COMPARABLE_WORDS = 20;
 
 /**
- * How far into the corpus distribution a value sits, as a percentile (0–100).
+ * How many standard deviations a value sits from the CLEAR corpus mean.
  *
- * Read off the stored empirical quantiles by inversion rather than converted
- * from a z-score: these metrics are skewed (words per sentence runs 3.9…101.5>
- * across the corpus), so the normal CDF would misreport the tails — at +1σ it
- * claims the 84th percentile where the corpus actually says 89th.
+ * Returns `null` when a comparison is not meaningful (no spread in the norm).
+ * All five normative metrics point the same way — higher means harder to read —
+ * so a positive z is always "more difficult than the average excerpt".
  *
- * Returns `null` when a comparison is not meaningful.
+ * Caveat: these distributions are skewed, so a z-score locates a value rather
+ * than giving its exact percentile. The norms generator logs the gap on every
+ * run (for words/sentence, +1σ sits at the 89th percentile, not the 84th).
  */
-export function percentileOf(value: number, norm: MetricNorm): number | null {
-  const quantiles = norm.quantiles;
-  if (!Number.isFinite(value) || !Array.isArray(quantiles) || quantiles.length < 2) return null;
+export function zScore(value: number, norm: MetricNorm): number | null {
+  if (!Number.isFinite(value) || !Number.isFinite(norm.mean) || !(norm.sd > 0)) return null;
+  return (value - norm.mean) / norm.sd;
+}
 
-  const last = quantiles.length - 1;
-  if (value <= quantiles[0]) return 0;
-  if (value >= quantiles[last]) return 100;
+/** Signed deviation for display: `+1.4`, `−0.7`, `0.0` (the chip adds the `z`). */
+export function formatZ(z: number): string {
+  const magnitude = Math.abs(z).toFixed(1);
+  // Never print "−0.0".
+  if (magnitude === '0.0') return '0.0';
+  return (z > 0 ? '+' : '\u2212') + magnitude;
+}
 
-  let low = 0;
-  let high = last;
-  while (high - low > 1) {
-    const mid = (low + high) >> 1;
-    if (quantiles[mid] <= value) low = mid;
-    else high = mid;
-  }
+/**
+ * Standard normal CDF, Φ(z) — Abramowitz & Stegun 7.1.26, |error| < 7.5e-8.
+ */
+export function normalCdf(z: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const density = 0.3989422804014327 * Math.exp((-z * z) / 2);
+  const tail =
+    density * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return z > 0 ? 1 - tail : tail;
+}
 
-  const span = quantiles[high] - quantiles[low];
-  const fraction = span > 0 ? (value - quantiles[low]) / span : 0;
-  return ((low + fraction) / last) * 100;
+/**
+ * Percentile (0–100) for a z-score, via the normal CDF.
+ *
+ * This is an **approximation**: it assumes the metric is normally distributed
+ * and the corpus is not. Words per sentence, for instance, is right-skewed
+ * (3.9…101.5), so its true 89th percentile sits at +1σ where Φ claims the 84th.
+ * The norms generator measures that gap on every run — see the README table.
+ */
+export function percentileFromZ(z: number): number {
+  return normalCdf(z) * 100;
 }
 
 /** Percentile at or above which a metric is called out as notably harder. */
@@ -63,43 +79,6 @@ export const NOTABLE_PERCENTILE = 93;
 
 /** Percentile at or below which a metric is called out as notably easier. */
 export const EASY_PERCENTILE = 7;
-
-/**
- * Ramp endpoints for percentile labels — green (easy) through to red (hard).
- *
- * These are the app's semantic colours (--good, --muted, --warn, --bad) mixed
- * down to where they can be read as 9px text on white paper. They must track
- * those tokens: the dark theme used pale mint/amber/rose values here, and those
- * are illegible as text once the ground turns light. smoke.ts asserts the whole
- * ramp keeps WCAG AA contrast against the paper background.
- */
-const PERCENTILE_COOL = '#0a7a0a';
-const PERCENTILE_NEUTRAL = '#6b6b63';
-const PERCENTILE_WARM = '#8a5a00';
-const PERCENTILE_HOT = '#c00000';
-
-/** Where the warm half of the ramp hands over from amber to red. */
-const WARM_HANDOVER = 0.72;
-
-/**
- * Colour for a percentile label: neutral at the median, cooling toward green
- * below it and warming through amber to red above it.
- *
- * All five normative metrics point the same way — a higher percentile always
- * means harder to read — so one ramp serves all of them. The exponent shows the
- * tint sooner than a linear blend would, otherwise everything between the 20th
- * and 80th percentile would look identical.
- */
-export function percentileColor(percentile: number): string {
-  const p = Math.max(0, Math.min(100, percentile));
-
-  if (p <= 50) return mixHex(PERCENTILE_NEUTRAL, PERCENTILE_COOL, (1 - p / 50) ** 0.75);
-
-  const t = (p - 50) / 50;
-  return t <= WARM_HANDOVER
-    ? mixHex(PERCENTILE_NEUTRAL, PERCENTILE_WARM, (t / WARM_HANDOVER) ** 0.75)
-    : mixHex(PERCENTILE_WARM, PERCENTILE_HOT, (t - WARM_HANDOVER) / (1 - WARM_HANDOVER));
-}
 
 /** Ordinal label for a percentile: `1st`, `24th`, `92nd`, `<1st`, `>99th`. */
 export function formatPercentile(percentile: number): string {
@@ -119,6 +98,42 @@ export function formatPercentile(percentile: number): string {
     default:
       return `${rounded}th`;
   }
+}
+/** Ramp endpoints for deviation labels — green (easy) through to red (hard).
+ *
+ * These are the app's semantic colours (--good, --muted, --warn, --bad) mixed
+ * down to where they can be read as 9px text on white paper. They must track
+ * those tokens: the dark theme used pale mint/amber/rose values here, and those
+ * are illegible as text once the ground turns light. smoke.ts asserts the whole
+ * ramp keeps WCAG AA contrast against the paper background.
+ */
+const PERCENTILE_COOL = '#0a7a0a';
+const PERCENTILE_NEUTRAL = '#6b6b63';
+const PERCENTILE_WARM = '#8a5a00';
+const PERCENTILE_HOT = '#c00000';
+
+/** |z| at which the ramp is fully saturated. */
+export const SATURATED_Z = 2.5;
+
+/** Where the warm half of the ramp hands over from amber to red. */
+const WARM_HANDOVER = 0.72;
+
+/**
+ * Colour for a deviation label: neutral at the corpus mean, cooling toward
+ * green below it and warming through amber to red above it.
+ *
+ * All five normative metrics point the same way — a larger z always means
+ * harder to read — so one ramp serves all of them. The exponent shows the tint
+ * sooner than a linear blend would, otherwise everything within half a standard
+ * deviation would look identical.
+ */
+export function deviationColor(z: number): string {
+  const t = Math.max(-1, Math.min(1, z / SATURATED_Z));
+
+  if (t <= 0) return mixHex(PERCENTILE_NEUTRAL, PERCENTILE_COOL, (-t) ** 0.75);
+  return t <= WARM_HANDOVER
+    ? mixHex(PERCENTILE_NEUTRAL, PERCENTILE_WARM, (t / WARM_HANDOVER) ** 0.75)
+    : mixHex(PERCENTILE_WARM, PERCENTILE_HOT, (t - WARM_HANDOVER) / (1 - WARM_HANDOVER));
 }
 
 /** Corpus context line for a metric tooltip, e.g. `21.3 ± 9.2 (n=4,724)`. */

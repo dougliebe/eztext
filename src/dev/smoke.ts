@@ -13,14 +13,17 @@ import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap'
 import { runAnalysis } from '../core/engine';
 import {
   computeMetrics,
+  deviationColor,
   EASY_PERCENTILE,
   formatPercentile,
+  formatZ,
   isFamiliarWord,
   MIN_COMPARABLE_WORDS,
   NOTABLE_PERCENTILE,
-  percentileColor,
-  percentileOf,
+  percentileFromZ,
   POLYSYLLABLE_THRESHOLD,
+  SATURATED_Z,
+  zScore,
 } from '../core/metrics';
 import { parseHex } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
@@ -119,9 +122,9 @@ function main(): void {
   ];
   for (const [label, value, key] of comparisons) {
     const norm = CLEAR_CORPUS.metrics[key];
-    const percentile = percentileOf(value, norm);
+    const z = zScore(value, norm);
     console.log(
-      `  ${label.padEnd(18)} ${value.toFixed(3).padStart(7)}  corpus ${norm.mean.toFixed(4)} ± ${norm.sd.toFixed(4)}  ${percentile === null ? 'n/a' : `${formatPercentile(percentile).padStart(6)} (p${percentile.toFixed(1)})`}`,
+      `  ${label.padEnd(18)} ${value.toFixed(3).padStart(7)}  corpus ${norm.mean.toFixed(4)} ± ${norm.sd.toFixed(4)}  ${z === null ? 'n/a' : `z ${formatZ(z).padStart(5)}`}`,
     );
   }
 
@@ -129,13 +132,7 @@ function main(): void {
   check(
     'corpus norms are populated and plausible',
     CLEAR_CORPUS.n > 4000 &&
-      normValues.every(
-        ([, norm]) =>
-          norm.sd > 0 &&
-          Number.isFinite(norm.mean) &&
-          Array.isArray(norm.quantiles) &&
-          norm.quantiles.length === 101,
-      ) &&
+      normValues.every(([, norm]) => norm.sd > 0 && Number.isFinite(norm.mean)) &&
       CLEAR_CORPUS.metrics.wordsPerSentence.mean > 10 &&
       CLEAR_CORPUS.metrics.wordsPerSentence.mean < 30 &&
       CLEAR_CORPUS.metrics.charactersPerWord.mean > 3 &&
@@ -146,54 +143,91 @@ function main(): void {
       CLEAR_CORPUS.metrics.unfamiliarShare.mean < 1 &&
       CLEAR_CORPUS.metrics.syllablesPerWord.mean > 1 &&
       CLEAR_CORPUS.metrics.syllablesPerWord.mean < 2,
-    `${normValues.length} metrics with mean, sd and 101 quantiles`,
-  );
-  check(
-    'quantiles ascend and bracket the mean',
-    normValues.every(([, norm]) => {
-      const ascending = norm.quantiles.every((value, index) => index === 0 || value >= norm.quantiles[index - 1]);
-      return ascending && norm.quantiles[0] <= norm.mean && norm.mean <= norm.quantiles[100];
-    }),
+    `${normValues.length} metrics with a mean and a spread`,
   );
 
-  // The percentile lookup must agree with the distribution it came from.
-  const medianMatches = normValues.every(([, norm]) => {
-    const atMedian = percentileOf(norm.quantiles[50], norm);
-    return atMedian !== null && Math.abs(atMedian - 50) < 0.5;
-  });
-  check('the corpus median scores as the 50th percentile', medianMatches);
+  // The z-score must locate a value relative to the distribution it came from.
+  // Compared with a tolerance: (mean + sd − mean) / sd lands on 0.9999999999999998
+  // for some of these means, which is a fact about floats, not about the maths.
+  const near = (actual: number | null, expected: number) => actual !== null && Math.abs(actual - expected) < 1e-9;
   check(
-    'percentile lookup is monotonic in value',
-    normValues.every(([, norm]) => {
-      const low = percentileOf(norm.quantiles[10], norm)!;
-      const mid = percentileOf(norm.quantiles[50], norm)!;
-      const high = percentileOf(norm.quantiles[90], norm)!;
-      return low < mid && mid < high;
-    }),
+    'the corpus mean scores z = 0 and one sd scores z = 1',
+    normValues.every(([, norm]) => near(zScore(norm.mean, norm), 0) && near(zScore(norm.mean + norm.sd, norm), 1)),
   );
   check(
-    'values beyond the corpus range clamp to 0 and 100',
+    'z rises with the value and falls below the mean',
     normValues.every(([, norm]) =>
-      percentileOf(norm.quantiles[0] - 1, norm) === 0 && percentileOf(norm.quantiles[100] + 1, norm) === 100),
+      near(zScore(norm.mean - norm.sd, norm), -1) &&
+      near(zScore(norm.mean, norm), 0) &&
+      near(zScore(norm.mean + norm.sd, norm), 1),
+    ),
+  );
+  check(
+    'a zero-spread norm yields no comparison',
+    zScore(5, { mean: 5, sd: 0 }) === null && zScore(Number.NaN, { mean: 1, sd: 1 }) === null,
   );
   check('corpus covers real prose', CLEAR_CORPUS.wordsPerExcerpt.mean > 150 && CLEAR_CORPUS.wordsPerExcerpt.mean < 200,
     `${CLEAR_CORPUS.wordsPerExcerpt.mean} words per excerpt ± ${CLEAR_CORPUS.wordsPerExcerpt.sd}`);
 
-  const samplePercentiles = comparisons.map(([, value, key]) => percentileOf(value, CLEAR_CORPUS.metrics[key])!);
-  console.log(`  sample percentiles: ${samplePercentiles.map((p) => formatPercentile(p)).join(' ')}`);
+  const sampleZs = comparisons.map(([, value, key]) => zScore(value, CLEAR_CORPUS.metrics[key])!);
+  console.log(
+    `  sample deviations: ${sampleZs.map((z) => `z ${formatZ(z)} (${formatPercentile(percentileFromZ(z))})`).join('  ')}`,
+  );
   check(
-    'every sample percentile is finite and inside the corpus range',
-    samplePercentiles.every((p) => Number.isFinite(p) && p >= 0 && p <= 100),
+    'every sample deviation is finite and unremarkable',
+    sampleZs.every((z) => Number.isFinite(z) && Math.abs(z) < 5),
   );
   check(
     'sample sentences are shorter than the typical excerpt',
-    samplePercentiles[0] < 50,
-    `${formatPercentile(samplePercentiles[0])} on words/sentence`,
+    sampleZs[0] < 0,
+    `z ${formatZ(sampleZs[0])} on words/sentence`,
   );
   check(
     'sample words are longer than the typical excerpt',
-    samplePercentiles[1] > 50,
-    `${formatPercentile(samplePercentiles[1])} on chars/word`,
+    sampleZs[1] > 0,
+    `z ${formatZ(sampleZs[1])} on chars/word`,
+  );
+
+  console.log('\n  z-score labelling:');
+  check('  +1.42 → +1.4', formatZ(1.42) === '+1.4', formatZ(1.42));
+  check('  −0.7 → −0.7', formatZ(-0.7) === '\u22120.7', formatZ(-0.7));
+  check('  0 → 0.0', formatZ(0) === '0.0', formatZ(0));
+  check('  −0.03 → 0.0 (never prints −0.0)', formatZ(-0.03) === '0.0', formatZ(-0.03));
+
+  console.log('\n  normal-CDF percentile:');
+  const closeTo = (actual: number, expected: number, tolerance = 0.01) => Math.abs(actual - expected) < tolerance;
+  const percentage = (value: number) => `${value.toFixed(2)}%`;
+  check('  Φ(0) = 50th', closeTo(percentileFromZ(0), 50), percentage(percentileFromZ(0)));
+  check('  Φ(1) = 84.1st', closeTo(percentileFromZ(1), 84.13, 0.02), percentage(percentileFromZ(1)));
+  check('  Φ(-1) = 15.9th', closeTo(percentileFromZ(-1), 15.87, 0.02), percentage(percentileFromZ(-1)));
+  check('  Φ(1.96) = 97.5th', closeTo(percentileFromZ(1.96), 97.5, 0.02), percentage(percentileFromZ(1.96)));
+  check(
+    '  Φ(z) + Φ(−z) = 100 (symmetric)',
+    [0.5, 1, 1.5, 2, 3].every((z) => closeTo(percentileFromZ(z) + percentileFromZ(-z), 100, 1e-6)),
+  );
+  check(
+    '  monotonic in z',
+    [-3, -2, -1, 0, 1, 2, 3]
+      .map(percentileFromZ)
+      .every((value, index, all) => index === 0 || value > all[index - 1]),
+  );
+  check(
+    '  saturates at the tails rather than overflowing',
+    percentileFromZ(-12) < 0.01 && percentileFromZ(12) > 99.99 && closeTo(percentileFromZ(-12), 0, 0.01),
+    `Φ(−12) = ${percentage(percentileFromZ(-12))}, Φ(+12) = ${percentage(percentileFromZ(12))}`,
+  );
+  check(
+    '  notable/easy bands sit inside the tails',
+    NOTABLE_PERCENTILE > 90 &&
+      NOTABLE_PERCENTILE < 100 &&
+      EASY_PERCENTILE === 100 - NOTABLE_PERCENTILE &&
+      closeTo(percentileFromZ(1.5), NOTABLE_PERCENTILE, 1),
+    `notable ≥ ${formatPercentile(NOTABLE_PERCENTILE)}, easy ≤ ${formatPercentile(EASY_PERCENTILE)} (z ±1.5 = ${formatPercentile(percentileFromZ(1.5))})`,
+  );
+  check(
+    '  short documents are excluded from comparison',
+    MIN_COMPARABLE_WORDS === 20 && computeMetrics('Too short.').words < MIN_COMPARABLE_WORDS,
+    `cut-off ${MIN_COMPARABLE_WORDS} words`,
   );
 
   console.log('\n  percentile labelling:');
@@ -203,22 +237,11 @@ function main(): void {
   check('  11 → 11th', formatPercentile(11) === '11th', formatPercentile(11));
   check('  24.4 → 24th', formatPercentile(24.4) === '24th', formatPercentile(24.4));
   check('  92.6 → 93rd', formatPercentile(92.6) === '93rd', formatPercentile(92.6));
-  check('  0 → <1st', formatPercentile(0) === '<1st', formatPercentile(0));
-  check('  100 → >99th', formatPercentile(100) === '>99th', formatPercentile(100));
-  check(
-    '  notable/easy bands sit inside the tails',
-    NOTABLE_PERCENTILE > 90 && NOTABLE_PERCENTILE < 100 && EASY_PERCENTILE > 0 && EASY_PERCENTILE < 10,
-    `notable ≥ p${NOTABLE_PERCENTILE}, easy ≤ p${EASY_PERCENTILE}`,
-  );
-  check(
-    '  short documents are excluded from comparison',
-    MIN_COMPARABLE_WORDS === 20 && computeMetrics('Too short.').words < MIN_COMPARABLE_WORDS,
-    `cut-off ${MIN_COMPARABLE_WORDS} words`,
-  );
+  check('  0.2 → <1st', formatPercentile(0.2) === '<1st', formatPercentile(0.2));
+  check('  99.9 → >99th', formatPercentile(99.9) === '>99th', formatPercentile(99.9));
 
-  console.log('\n  percentile colour ramp:');
+  console.log('\n  deviation colour ramp:');
   const channel = (hex: string, index: number) => parseHex(hex)[index];
-
   // WCAG relative luminance, for the contrast guard below.
   const luminance = (hex: string) => {
     const linear = parseHex(hex).map((value) => {
@@ -233,41 +256,41 @@ function main(): void {
   // instead — how the middle and the ends should behave — plus the one thing the
   // light theme requires of them: they are used as small text on white paper.
   check(
-    '  neutral grey at the median',
-    channel(percentileColor(50), 0) === channel(percentileColor(50), 1),
-    percentileColor(50),
+    '  neutral grey at the corpus mean',
+    channel(deviationColor(0), 0) === channel(deviationColor(0), 1),
+    deviationColor(0),
   );
   check(
-    '  saturates green at p0 and red at p100',
-    channel(percentileColor(0), 1) > channel(percentileColor(0), 0) &&
-      channel(percentileColor(100), 0) > channel(percentileColor(100), 1) &&
-      channel(percentileColor(0), 1) > channel(percentileColor(50), 1) &&
-      channel(percentileColor(100), 0) > channel(percentileColor(50), 0),
-    `${percentileColor(0)} … ${percentileColor(100)}`,
+    '  saturates green below and red above',
+    channel(deviationColor(-SATURATED_Z), 1) > channel(deviationColor(-SATURATED_Z), 0) &&
+      channel(deviationColor(SATURATED_Z), 0) > channel(deviationColor(SATURATED_Z), 1) &&
+      channel(deviationColor(-SATURATED_Z), 1) > channel(deviationColor(0), 1) &&
+      channel(deviationColor(SATURATED_Z), 0) > channel(deviationColor(0), 0),
+    `${deviationColor(-SATURATED_Z)} … ${deviationColor(SATURATED_Z)}`,
   );
   check(
-    '  warms as the percentile rises above the median',
-    channel(percentileColor(99), 0) > channel(percentileColor(75), 0) &&
-      channel(percentileColor(75), 0) > channel(percentileColor(55), 0) &&
-      channel(percentileColor(55), 0) > channel(percentileColor(50), 0),
-    [55, 75, 99].map((p) => `p${p}=${percentileColor(p)}`).join(' '),
+    '  warms as the deviation rises above the mean',
+    channel(deviationColor(2.4), 0) > channel(deviationColor(1.7), 0) &&
+      channel(deviationColor(1.7), 0) > channel(deviationColor(1), 0) &&
+      channel(deviationColor(1), 0) > channel(deviationColor(0), 0),
+    [1, 1.7, 2.4].map((z) => `z${z}=${deviationColor(z)}`).join(' '),
   );
   check(
-    '  cools as the percentile falls below the median',
-    channel(percentileColor(0), 1) > channel(percentileColor(25), 1) &&
-      channel(percentileColor(25), 1) > channel(percentileColor(45), 1),
-    [0, 25, 45].map((p) => `p${p}=${percentileColor(p)}`).join(' '),
+    '  cools as the deviation falls below the mean',
+    channel(deviationColor(-2.4), 1) > channel(deviationColor(-1.7), 1) &&
+      channel(deviationColor(-1.7), 1) > channel(deviationColor(-1), 1) &&
+      channel(deviationColor(-1), 1) > channel(deviationColor(0), 1),
+    [-1, -1.7, -2.4].map((z) => `z${z}=${deviationColor(z)}`).join(' '),
   );
   check(
-    '  every percentile yields a valid colour',
-    Array.from({ length: 101 }, (_, p) => percentileColor(p)).every((hex) => /^#[0-9a-f]{6}$/.test(hex)),
+    '  saturates rather than running off the ramp',
+    deviationColor(50) === deviationColor(SATURATED_Z) && deviationColor(-50) === deviationColor(-SATURATED_Z),
   );
-  const worst = Array.from({ length: 101 }, (_, p) => contrastOnPaper(percentileColor(p))).reduce(
-    (min, value) => Math.min(min, value),
-    Number.POSITIVE_INFINITY,
-  );
+  const ramp = Array.from({ length: 121 }, (_, index) => deviationColor(-3 + (index * 6) / 120));
+  check('  every deviation yields a valid colour', ramp.every((hex) => /^#[0-9a-f]{6}$/.test(hex)));
+  const worst = ramp.map(contrastOnPaper).reduce((min, value) => Math.min(min, value), Number.POSITIVE_INFINITY);
   check(
-    '  every percentile is legible as small text on paper',
+    '  every deviation is legible as small text on paper',
     worst >= 4.5,
     `worst contrast ${worst.toFixed(2)}:1 (WCAG AA needs 4.5:1)`,
   );

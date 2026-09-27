@@ -149,7 +149,7 @@ src/
   core/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
-    metrics.ts      topbar metrics, corpus percentiles, Dale–Chall rules
+    metrics.ts      topbar metrics, z-scores + CDF percentiles, Dale–Chall rules
     heatmap.ts      click-a-metric preview shading (document-relative intensity)
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
     persistence.ts  namespaced localStorage + usePersistentState
@@ -198,24 +198,28 @@ and they are the ones with hover tooltips explaining the definition.
 | % unfamiliar | Share of words outside the **Dale–Chall** list of ~3,000 familiar words |
 | Syllables / word | Estimated with the same vowel-group heuristic |
 
-Each of the five ratios carries a small **percentile chip** — how far into the CLEAR corpus distribution
-your value sits. `22nd` on words/sentence means your sentences are shorter than 78% of published
-excerpts; `91st` on chars/word means your words are longer than 91% of them.
+Each of the five ratios carries a small **percentile chip**, computed from its z-score against the CORPUS
+with the normal CDF. `24th` on words/sentence means your sentences are shorter than the typical excerpt;
+`92nd` on chars/word means your words are longer. All five point the same way (higher = harder to read),
+so a high percentile is always "more difficult than the average excerpt".
 
-The chip's **font colour is a continuous ramp**, so the strip can be scanned at a glance: neutral grey at
-the 50th percentile, cooling to green below it and warming through amber to red above it.
+The z-score behind it is in the tooltip and on the element (`data-z`); the chip shows the percentile
+because it is the more readable of the two. The chip's **font colour follows the z-score** on a continuous
+ramp: neutral grey at the mean, cooling to green below it and warming through amber to red above it,
+saturating at ±2.5σ.
 
 ```
-p22 → #67bc9d   p66 → #c0a57c   p79 → #e0af67   p91 → #f19c68   p99 → #f27a7a
+z −2 → #0d7a0d     z −1 → #3a7336     z 0 → #6b6b63     z +1.7 → #895b04     z +2.4 → #b80d00
 ```
 
-The box around it is tinted only in the tails (≥ 93rd amber, ≤ 7th green). Hovering gives the definition
-plus the numbers:
+The box around it is tinted only outside the 93rd/7th percentile. Hovering gives the definition plus the
+numbers:
 
 ```
 Average sentence length in words.
 
-CLEAR corpus: 21.28 ± 9.23 (n=4,724) → 22nd percentile, easier than the average excerpt.
+CLEAR corpus: 21.28 ± 9.23 (n=4,724) → z-score −0.7, easier than the average excerpt
+(24th percentile by the normal approximation; the corpus is skewed, so treat it as approximate).
 ```
 
 Comparisons are suppressed entirely below 20 words, where the ratios are meaningless.
@@ -269,17 +273,43 @@ itself, so the norms can never drift from the implementation.
 
 ```
 4724 excerpts   words/excerpt 173.8 ± 17.1
-Words / sentence  21.2829 ± 9.2330
-Chars / word       4.4419 ± 0.4345
-% polysyllabic     0.0958 ± 0.0600     (9.6% ± 6.0%)
-% unfamiliar       0.1757 ± 0.0990     (17.6% ± 9.9%)
-Syllables / word   1.4147 ± 0.1649
+metric                     mean       sd  p10      p50      p90
+wordsPerSentence        21.2829   9.2330    11.34    20.25    31.33
+charactersPerWord       4.4419   0.4345     3.92     4.40     5.01
+polysyllabicShare       0.0958   0.0600     0.03     0.09     0.18
+unfamiliarShare         0.1757   0.0990     0.06     0.16     0.31
+syllablesPerWord        1.4147   0.1649     1.22     1.39     1.63
 ```
+
+Those deciles are printed as a diagnostic (the generator computes them from the raw values) but not
+shipped — the module is just `mean` and `sd` per metric.
+
+**The percentile is a normal approximation of the z-score.** The module ships only a mean and a standard
+deviation per metric (2.4 KB); the app converts `z` to a percentile with Φ(z). That assumes the metric is
+normally distributed, and this corpus is not — words/sentence is right-skewed, running 3.9…101.5 with the
+median (20.25) below the mean (21.28). So the generator measures the damage on every run, comparing Φ(z)
+against where each value truly sits:
+
+```
+accuracy of the normal-CDF percentile
+metric                  max error  worst at
+wordsPerSentence            8.0 pp  true p75 claimed p67 (z 0.44)
+charactersPerWord           4.1 pp  true p53 claimed p49 (z -0.03)
+polysyllabicShare           6.6 pp  true p47 claimed p40 (z -0.24)
+unfamiliarShare             6.7 pp  true p51 claimed p44 (z -0.14)
+syllablesPerWord            6.2 pp  true p52 claimed p46 (z -0.10)
+```
+
+**Worst case ≈ 8 percentile points**, and (counter-intuitively) the error peaks near the *middle* of the
+distribution, where density is highest and the mean/median gap shifts everything along. The tails are
+well behaved. If exact percentiles are ever needed, the fix is to ship the quantile table — which is what
+an earlier revision did, at 6.2 KB.
 
 Two things this makes obvious. First, the corpus averages **17.6% unfamiliar** words, so an absolute
 "over 10% is hard" rule (which this README previously suggested) fires on nearly everything — the
-bundled sample sits at a perfectly ordinary `66th` percentile. Second, CLEAR excerpts are a fixed ~174 words, so
-comparing raw counts against them would be meaningless; only length-normalised ratios are recorded.
+bundled sample sits at a perfectly ordinary `z +0.3` (63rd percentile). Second, CLEAR excerpts are a
+fixed ~174 words, so comparing raw counts against them would be meaningless; only length-normalised
+ratios are recorded.
 
 **Licence:** the corpus is **CC BY-NC-SA 4.0** — non-commercial, share-alike, attribution required. Only
 aggregate statistics are committed here, never the corpus text, and the generated file carries the

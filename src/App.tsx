@@ -9,7 +9,7 @@ import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
 import { heatGradient } from './core/color';
 import { buildHeatmap, HEAT_METRICS, type HeatMetricId, type HeatMetricInfo } from './core/heatmap';
-import { computeMetrics, describeNorm, EASY_PERCENTILE, formatPercentile, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileColor, percentileOf } from './core/metrics';
+import { computeMetrics, describeNorm, deviationColor, EASY_PERCENTILE, formatPercentile, formatZ, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileFromZ, zScore } from './core/metrics';
 import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
 import { usePersistentState } from './core/persistence';
 import { compactNumber, round } from './core/text';
@@ -358,9 +358,10 @@ function Metric({
   /** Explains the click affordance in the tooltip. */
   heatLabel?: string;
 }) {
-  const percentile = deviation ? percentileOf(deviation.raw, deviation.norm) : null;
+  const z = deviation ? zScore(deviation.raw, deviation.norm) : null;
+  const percentile = z === null ? null : percentileFromZ(z);
 
-  // Tone comes from the corpus percentile, not a hardcoded threshold: the CLEAR
+  // Tone comes from the corpus comparison, not a hardcoded threshold: the CLEAR
   // corpus averages ~17.6% unfamiliar words, so an absolute "over 10% is hard"
   // rule would fire on nearly every text.
   const resolvedTone =
@@ -375,8 +376,8 @@ function Metric({
 
   const title = [
     hint,
-    deviation && percentile !== null
-      ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, percent)} → ${formatPercentile(percentile)} percentile, ${percentile >= 50 ? 'harder' : 'easier'} than the average excerpt.`
+    deviation && z !== null && percentile !== null
+      ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, percent)} → z-score ${formatZ(z)}, ${percentile >= 50 ? 'harder' : 'easier'} than the average excerpt (${formatPercentile(percentile)} percentile by the normal approximation; the corpus is skewed, so treat it as approximate).`
       : null,
     onToggle ? `${active ? 'Shading the preview. Click to stop' : `Click to ${heatLabel ?? 'shade the preview'}`}.` : null,
   ]
@@ -397,8 +398,13 @@ function Metric({
       <span className="metric__label">{label}</span>
       <span className="metric__value">
         {value}
-        {percentile !== null && (
-          <span className="metric__chip" data-percentile={Math.round(percentile)} style={{ color: percentileColor(percentile) }}>
+        {z !== null && percentile !== null && (
+          <span
+            className="metric__chip"
+            data-z={z.toFixed(2)}
+            data-percentile={Math.round(percentile)}
+            style={{ color: deviationColor(z) }}
+          >
             {formatPercentile(percentile)}
           </span>
         )}

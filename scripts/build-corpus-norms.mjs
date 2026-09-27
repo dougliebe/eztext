@@ -153,10 +153,8 @@ function summarise(values) {
  * Empirical quantiles p0…p100, by linear interpolation between closest ranks
  * (the same convention `numpy.percentile` uses).
  *
- * Storing the distribution rather than assuming normality matters here: these
- * metrics are skewed — `wordsPerSentence` runs 3.9…101.5 in this corpus — so a
- * z-score converted through the normal CDF would report badly wrong percentiles
- * in the tails.
+ * Kept only to report how skewed each metric is on every run — the app compares
+ * with mean and standard deviation, so the quantiles are never shipped.
  */
 function quantiles(values, resolution = 101) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -233,21 +231,42 @@ async function main() {
   const words = summarise(wordCounts);
 
   console.log(`\n  ${n} excerpts used (${skipped} skipped under ${MIN_WORDS} words)\n`);
-  console.log(`  ${'metric'.padEnd(22)} ${'mean'.padStart(8)} ${'sd'.padStart(8)}  p10      p50      p90      skew`);
+  console.log(`  ${'metric'.padEnd(22)} ${'mean'.padStart(8)} ${'sd'.padStart(8)}  p10      p50      p90`);
   for (const [key, value] of Object.entries(stats)) {
     const q = value.quantiles;
-    // Empirical vs normal-CDF percentile at +1σ — a big gap means the
-    // distribution is skewed and quantiles (not z-scores) are the honest read.
-    const z = 1;
-    const empirical = q.findIndex((v) => v >= value.mean + z * value.sd);
-    const normal = normalPercentile(z);
     console.log(
       `  ${key.padEnd(22)} ${value.mean.toFixed(4).padStart(8)} ${value.sd.toFixed(4).padStart(8)}  ` +
-        `${q[10].toFixed(2).padStart(7)}  ${q[50].toFixed(2).padStart(7)}  ${q[90].toFixed(2).padStart(7)}  ` +
-        `${empirical >= 0 ? `+1σ = p${empirical} vs p${normal.toFixed(0)}` : 'n/a'}`,
+        `${q[10].toFixed(2).padStart(7)}  ${q[50].toFixed(2).padStart(7)}  ${q[90].toFixed(2).padStart(7)}`,
     );
   }
   console.log(`  ${'words per excerpt'.padEnd(22)} ${words.mean.toFixed(1).padStart(8)} ${words.sd.toFixed(1).padStart(8)}`);
+
+  // The app turns a z-score into a percentile with the normal CDF. That assumes
+  // normality and this corpus is skewed, so measure the damage: for a grid of
+  // percentiles, compare Φ(z) against where the value really sits.
+  console.log(`\n  accuracy of the normal-CDF percentile (app converts z → percentile):`);
+  console.log(`  ${'metric'.padEnd(22)} ${'max error'.padStart(10)}  worst at`);
+  const accuracyRows = [];
+  for (const [key, value] of Object.entries(stats)) {
+    const q = value.quantiles;
+    let worst = { error: 0, empirical: 0, claimed: 0, z: 0 };
+    for (let p = 1; p <= 99; p += 1) {
+      const z = (q[p] - value.mean) / value.sd;
+      const claimed = normalPercentile(z);
+      const error = Math.abs(claimed - p);
+      if (error > worst.error) worst = { error, empirical: p, claimed, z };
+    }
+    /** @type {{key: string, worst: typeof worst}} */
+    accuracyRows.push({ key, worst });
+    console.log(
+      `  ${key.padEnd(22)} ${worst.error.toFixed(1).padStart(8)} pp  true p${worst.empirical} claimed p${worst.claimed.toFixed(0)} (z ${worst.z.toFixed(2)})`,
+    );
+  }
+  const worstOverall = accuracyRows.reduce((a, b) => (b.worst.error > a.worst.error ? b : a));
+  console.log(
+    `\n  worst case: ${worstOverall.key} misreports by ${worstOverall.worst.error.toFixed(1)} percentile points.`,
+  );
+  console.log(`  This is inherent to comparing skewed metrics with mean ± SD.\n`);
 
   const file = `/**
  * Reference norms for the topbar metrics, derived from the CLEAR corpus.
@@ -256,7 +275,8 @@ async function main() {
  *
  *   ${n} excerpts, each metric computed with the app's own
  *   \`core/metrics.ts\` implementation, so these never drift from the code.
- *   Mean and sample standard deviation (n − 1).
+ *   Mean and sample standard deviation (n − 1); the app compares a document
+ *   against these as a z-score.
  *
  * Source: CLEAR — CommonLit Ease of Readability corpus
  *   https://github.com/scrosseye/CLEAR-Corpus
@@ -265,25 +285,20 @@ async function main() {
  *   corpus text itself is NOT redistributed here; only these aggregate
  *   statistics. Rebuilding requires downloading the corpus yourself.
  *
- * Each metric records the mean, the sample standard deviation, and the
- * empirical quantiles p0…p100. Percentiles come from the quantiles rather than
- * from a normal approximation: these distributions are skewed (words per
- * sentence spans 3.9…101.5), so converting a z-score through the normal CDF
- * would misreport the tails.
+ * Each metric records the mean and the sample standard deviation. The app shows
+ * a z-score and converts it to a percentile with the normal CDF, which assumes
+ * normality — and these distributions are skewed (words per sentence spans
+ * 3.9…101.5), so the generator measures and prints how far that approximation
+ * drifts from the corpus's true percentiles on every run.
  *
  * Only length-normalised ratios are recorded: corpus excerpts are a roughly
  * fixed length, so comparing raw counts (words, characters) against them would
  * be meaningless.
  */
 
-export interface CorpusStat {
+export interface MetricNorm {
   mean: number;
   sd: number;
-}
-
-export interface MetricNorm extends CorpusStat {
-  /** Empirical quantiles p0…p100 — 101 ascending values. */
-  quantiles: number[];
 }
 
 export interface CorpusNorms {
@@ -293,7 +308,7 @@ export interface CorpusNorms {
   /** Excerpts that contributed, after dropping anything under 20 words. */
   n: number;
   /** Context for tooltips — the corpus is made of short excerpts. */
-  wordsPerExcerpt: CorpusStat;
+  wordsPerExcerpt: MetricNorm;
   metrics: {
     wordsPerSentence: MetricNorm;
     charactersPerWord: MetricNorm;
@@ -310,11 +325,11 @@ export const CLEAR_CORPUS: CorpusNorms = {
   n: ${n},
   wordsPerExcerpt: { mean: ${round(words.mean, 1)}, sd: ${round(words.sd, 1)} },
   metrics: {
-    wordsPerSentence: { mean: ${round(stats.wordsPerSentence.mean, 4)}, sd: ${round(stats.wordsPerSentence.sd, 4)}, quantiles: [${stats.wordsPerSentence.quantiles.map((v) => round(v, 3)).join(', ')}] },
-    charactersPerWord: { mean: ${round(stats.charactersPerWord.mean, 4)}, sd: ${round(stats.charactersPerWord.sd, 4)}, quantiles: [${stats.charactersPerWord.quantiles.map((v) => round(v, 3)).join(', ')}] },
-    polysyllabicShare: { mean: ${round(stats.polysyllabicShare.mean, 4)}, sd: ${round(stats.polysyllabicShare.sd, 4)}, quantiles: [${stats.polysyllabicShare.quantiles.map((v) => round(v, 4)).join(', ')}] },
-    unfamiliarShare: { mean: ${round(stats.unfamiliarShare.mean, 4)}, sd: ${round(stats.unfamiliarShare.sd, 4)}, quantiles: [${stats.unfamiliarShare.quantiles.map((v) => round(v, 4)).join(', ')}] },
-    syllablesPerWord: { mean: ${round(stats.syllablesPerWord.mean, 4)}, sd: ${round(stats.syllablesPerWord.sd, 4)}, quantiles: [${stats.syllablesPerWord.quantiles.map((v) => round(v, 3)).join(', ')}] },
+    wordsPerSentence: { mean: ${round(stats.wordsPerSentence.mean, 4)}, sd: ${round(stats.wordsPerSentence.sd, 4)} },
+    charactersPerWord: { mean: ${round(stats.charactersPerWord.mean, 4)}, sd: ${round(stats.charactersPerWord.sd, 4)} },
+    polysyllabicShare: { mean: ${round(stats.polysyllabicShare.mean, 4)}, sd: ${round(stats.polysyllabicShare.sd, 4)} },
+    unfamiliarShare: { mean: ${round(stats.unfamiliarShare.mean, 4)}, sd: ${round(stats.unfamiliarShare.sd, 4)} },
+    syllablesPerWord: { mean: ${round(stats.syllablesPerWord.mean, 4)}, sd: ${round(stats.syllablesPerWord.sd, 4)} },
   },
 };
 `;
