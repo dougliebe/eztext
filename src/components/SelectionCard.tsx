@@ -28,6 +28,16 @@ export function SelectionCard({ selection, scores, text, example, onClose }: Sel
   const token = word ? (scores?.tokens.find((candidate) => candidate.start === word.start) ?? null) : null;
   const bits = typeof selection.data?.bits === 'number' ? selection.data.bits : null;
 
+  // Optional per-annotation breakdown (GSDS dense units): the weighted shares
+  // that make this range dense, biggest first.
+  const contributors = Array.isArray(selection.data?.contributors)
+    ? (selection.data.contributors as Array<{ label?: unknown; value?: unknown }>).flatMap((entry) =>
+        entry && typeof entry.label === 'string' && typeof entry.value === 'number'
+          ? [{ label: entry.label, value: entry.value }]
+          : [],
+      )
+    : [];
+
   return (
     <section className="selection" aria-label="Selected text">
       <header className="selection__head">
@@ -57,6 +67,20 @@ export function SelectionCard({ selection, scores, text, example, onClose }: Sel
         <Alternatives word={word} token={token} />
       ) : (
         <p className="selection__detail">{selection.detail ?? 'No further detail for this range.'}</p>
+      )}
+
+      {contributors.length > 0 && (
+        <div className="selection__contributors">
+          <span className="selection__contributors-label">What makes it dense</span>
+          <ul className="selection__contributor-list">
+            {contributors.map((entry) => (
+              <li key={entry.label}>
+                <span>{entry.label}</span>
+                <span className="selection__contributor-value">{entry.value.toFixed(2)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {example && (

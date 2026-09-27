@@ -378,18 +378,28 @@ heat = await heatState();
 check('the Clear button resets to tool highlighting', heat.heatSpans === 0 && heat.toolHighlights > 3);
 
 // --- 6b. the selection inspector explains the flagged group --------------
-// Clicking a highlight opens the inspector; it must say why the range fired,
-// and (when the tool supplies one) show the canonical fix for that group.
-await page.locator('.hl[data-tool="gsds"]').first().click();
+// Select a dense unit from the results panel first: deterministic, and the
+// inspector is not pinned over the rows yet. Then verify the preview path.
+await page.locator('.tool-panel', { hasText: 'Syntactic density' }).locator('.row').first().click();
 await page.waitForSelector('.selection', { timeout: 5000 });
 const inspector = await page.evaluate(() => ({
   tool: document.querySelector('.selection__eyebrow')?.textContent ?? '',
   detail: document.querySelector('.selection__detail')?.textContent ?? '',
   example: document.querySelector('.selection__example')?.textContent ?? '',
+  contributors: document.querySelectorAll('.selection__contributor-list li').length,
 }));
-check('clicking a highlight opens the inspector', inspector.tool.length > 0, inspector.tool || 'none');
 check('the inspector names the rule that fired', inspector.detail.length > 0, inspector.detail.slice(0, 90));
 check('the inspector shows a fix example', inspector.example.includes('→'), inspector.example.slice(0, 110));
+check('the inspector breaks a dense unit into its shares', inspector.contributors > 0, `${inspector.contributors} contributors`);
+await page.locator('.selection__close').click();
+await page.waitForTimeout(100);
+
+// Which annotation wins a preview click is the topmost layer at that point, so
+// this only asserts that the click opens the inspector at all.
+await page.locator('.hl[data-tool="gsds"]').first().click({ force: true, position: { x: 4, y: 4 } });
+await page.waitForSelector('.selection', { timeout: 5000 });
+const opened = await page.evaluate(() => document.querySelector('.selection__eyebrow')?.textContent ?? '');
+check('clicking a highlight opens the inspector', opened.length > 0, opened || 'none');
 await page.locator('.selection__close').click();
 await page.waitForTimeout(100);
 

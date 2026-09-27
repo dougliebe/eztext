@@ -234,6 +234,37 @@ function main(): void {
     ).toFixed(1)} sub = ${gsds.words}`,
   );
 
+  // The per-unit decomposition must be exact, because the tool ranks T-units by
+  // it: every unit's contribution sums to the document total, every variable's
+  // shares sum to that variable's contribution, and no word or clause is lost.
+  const unitContribution = gsds.units.reduce((sum, unit) => sum + unit.total, 0);
+  check(
+    'per-unit contributions add up to the weighted total',
+    Math.abs(unitContribution - gsds.total) < 1e-9,
+    `${unitContribution.toFixed(4)} vs ${gsds.total.toFixed(4)}`,
+  );
+  const shareTotals = Object.fromEntries(
+    GSDS_VARIABLES.map((variable) => [
+      variable.id,
+      gsds.units.reduce((sum, unit) => sum + unit.shares[variable.id], 0),
+    ]),
+  ) as Record<string, number>;
+  check(
+    'per-unit shares add up to every variable contribution',
+    GSDS_VARIABLES.every(
+      (variable) => Math.abs(shareTotals[variable.id] - gsds.contributions[variable.id]) < 1e-9,
+    ),
+    GSDS_VARIABLES.map(
+      (variable) => `${variable.id} ${shareTotals[variable.id].toFixed(2)}/${gsds.contributions[variable.id].toFixed(2)}`,
+    ).join(' · '),
+  );
+  check(
+    'units account for every word, clause and clause word',
+    gsds.units.reduce((sum, unit) => sum + unit.words, 0) === gsds.words &&
+      gsds.units.reduce((sum, unit) => sum + unit.clauses, 0) === gsds.subordinateClauses &&
+      gsds.units.every((unit) => unit.mainWords + unit.subWords === unit.words),
+  );
+
   // Structural invariants: T-units tile the words exactly once and every clause
   // sits inside one. This is what keeps variables 1–4 finite on any input.
   const unitWords = gsds.tUnitRanges.reduce((sum, unit) => sum + unit.words, 0);
@@ -335,9 +366,12 @@ function main(): void {
   // group and rule that produced it.
   const auxiliaryRun = gsdsTool.run({
     text: 'The sky is blue. She is running.',
-    options: { beHave: 'auxiliary' },
+    options: { beHave: 'auxiliary', view: 'audit' },
   });
-  const allFormsRun = gsdsTool.run({ text: 'The sky is blue. She is running.', options: { beHave: 'all' } });
+  const allFormsRun = gsdsTool.run({
+    text: 'The sky is blue. She is running.',
+    options: { beHave: 'all', view: 'audit' },
+  });
   const beHaveAnnotations = (run: typeof auxiliaryRun) =>
     (run.annotations ?? []).filter((annotation) => annotation.group === 'be/have').length;
   check(
@@ -353,11 +387,39 @@ function main(): void {
   );
   check(
     'every GSDS group carries a fix example',
-    ['modal', 'be/have', 'preposition', 'possessive', 'time-adverb', 'verbal', 'sub-clause', 't-unit'].every(
+    ['dense', 'modal', 'be/have', 'preposition', 'possessive', 'time-adverb', 'verbal', 'sub-clause'].every(
       (group) =>
         Boolean(auxiliaryRun.groupDescriptions?.[group]) && Boolean(auxiliaryRun.groupExamples?.[group]),
     ),
     Object.keys(auxiliaryRun.groupExamples ?? {}).join(', '),
+  );
+
+  // The dense view (the default) must shade only the top share of T-units and
+  // hand the inspector the exact decomposition behind each shade.
+  const denseRun = gsdsTool.run({ text: SAMPLE_TEXT, options: {} });
+  const denseAnnotations = denseRun.annotations ?? [];
+  const expectedDense = Math.max(1, Math.round((gsds.units.length * 25) / 100));
+  const dataOf = (annotation: { data?: Record<string, unknown> }) => annotation.data ?? {};
+  check(
+    'the dense view shades the top quarter of T-units only',
+    denseAnnotations.length === expectedDense &&
+      denseAnnotations.every((annotation) => annotation.group === 'dense'),
+    `${denseAnnotations.length} of ${gsds.units.length} T-units`,
+  );
+  check(
+    'dense annotations carry the contributor breakdown',
+    denseAnnotations.every((annotation) => {
+      const list = dataOf(annotation).contributors;
+      return Array.isArray(list) && list.length > 0;
+    }),
+  );
+  check(
+    'dense shading is graded and stays subtle',
+    denseAnnotations.every(
+      (annotation) =>
+        typeof annotation.alpha === 'number' && annotation.alpha >= 0.1 && annotation.alpha <= 0.4,
+    ) && new Set(denseAnnotations.map((annotation) => annotation.alpha)).size > 1,
+    denseAnnotations.map((annotation) => annotation.alpha?.toFixed(2)).join(', '),
   );
 
   console.log(`\n${RULE}\nCorpus comparison — ${CLEAR_CORPUS.name}, n=${CLEAR_CORPUS.n}`);

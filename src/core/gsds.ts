@@ -299,6 +299,32 @@ export interface GsdsOptions {
   beHave: 'auxiliary' | 'all';
 }
 
+/**
+ * One T-unit's exact contribution to the document's weighted total.
+ *
+ * `shares` partitions the published variable contributions exactly: for the
+ * structural variables a share is the weight times the unit's local rate, for
+ * the count variables the weight times the unit's raw count, and each share
+ * sums across the document to `contributions[variable]`. `total` is therefore
+ * that unit's share of the published `total`, so ranking units by it ranks them
+ * by how much of the score they own — which is what “the densest areas” means
+ * here. The structural rates are the document's (words/T-unit is uniform), so
+ * the split is an attribution, not a claim that a unit could be scored alone.
+ */
+export interface GsdsUnitBreakdown {
+  /** 1-based position in the document. */
+  ordinal: number;
+  start: number;
+  end: number;
+  words: number;
+  clauses: number;
+  mainWords: number;
+  subWords: number;
+  counts: Record<GsdsFeatureKind, number>;
+  shares: GsdsFrequencies;
+  total: number;
+}
+
 export interface GsdsAnalysis {
   words: number;
   sentences: number;
@@ -311,6 +337,8 @@ export interface GsdsAnalysis {
   grade: number;
   /** Atomic highlights: one per counted lexical item. */
   features: GsdsFeature[];
+  /** Per-T-unit decomposition of the weighted total, in document order. */
+  units: GsdsUnitBreakdown[];
   /** T-unit spans with their word counts, for the optional structural layer. */
   tUnitRanges: Array<TextRange & { words: number }>;
   clauseRanges: SubordinateClause[];
@@ -431,6 +459,77 @@ export function analyseGsds(text: string, options: Partial<GsdsOptions> = {}): G
     GSDS_VARIABLES.map((variable, index) => [variable.id, score.contributions[index]]),
   ) as GsdsFrequencies;
 
+  // Attribute each part of the score to the T-unit that owns it. Features and
+  // clauses are in document order and units tile the words, so one forward
+  // pointer per pass is enough.
+  const zeroShares = () =>
+    Object.fromEntries(GSDS_VARIABLES.map((variable) => [variable.id, 0])) as GsdsFrequencies;
+  const breakdowns: GsdsUnitBreakdown[] = units.map((unit, index) => ({
+    ordinal: index + 1,
+    start: unit.start,
+    end: unit.end,
+    words: unit.wordEnd - unit.wordStart,
+    clauses: 0,
+    mainWords: 0,
+    subWords: 0,
+    counts: { modal: 0, 'be-have': 0, preposition: 0, possessive: 0, 'time-adverb': 0, verbal: 0 },
+    shares: zeroShares(),
+    total: 0,
+  }));
+
+  const assign = <T>(items: T[], start: (item: T) => number, apply: (unit: GsdsUnitBreakdown, item: T) => void) => {
+    let pointer = 0;
+    for (const item of items) {
+      const at = start(item);
+      while (pointer < breakdowns.length - 1 && at >= breakdowns[pointer].end) pointer += 1;
+      const unit = breakdowns[pointer];
+      if (unit && at >= unit.start && at < unit.end) apply(unit, item);
+    }
+  };
+
+  assign(features, (feature) => feature.start, (unit, feature) => {
+    unit.counts[feature.kind] += 1;
+  });
+  assign(clauses, (clause) => clause.start, (unit) => {
+    unit.clauses += 1;
+  });
+
+  let clauseRange = 0;
+  for (const token of tokens) {
+    while (clauseRange < mergedClauseRanges.length && token.start >= mergedClauseRanges[clauseRange].end) {
+      clauseRange += 1;
+    }
+    const insideClause =
+      clauseRange < mergedClauseRanges.length && token.start >= mergedClauseRanges[clauseRange].start;
+    if (!insideClause) continue;
+    let pointer = 0;
+    while (pointer < breakdowns.length - 1 && token.start >= breakdowns[pointer].end) pointer += 1;
+    const unit = breakdowns[pointer];
+    if (unit && token.start >= unit.start && token.start < unit.end) unit.subWords += 1;
+  }
+
+  for (const unit of breakdowns) {
+    unit.mainWords = unit.words - unit.subWords;
+    // The structural variables enter the published total as rates, so their
+    // shares are rates too; the count variables enter as raw counts, so their
+    // shares stay at full weight × count. That is what makes the shares sum to
+    // the published contributions rather than to a fraction of them.
+    unit.shares = {
+      wordsPerTUnit: WEIGHT.wordsPerTUnit * (tUnits > 0 ? unit.words / tUnits : 0),
+      subordinatePerTUnit: WEIGHT.subordinatePerTUnit * (tUnits > 0 ? unit.clauses / tUnits : 0),
+      mainClauseLength: WEIGHT.mainClauseLength * (tUnits > 0 ? unit.mainWords / tUnits : 0),
+      subordinateClauseLength:
+        subordinateClauses > 0 ? WEIGHT.subordinateClauseLength * (unit.subWords / subordinateClauses) : 0,
+      modals: WEIGHT.modals * unit.counts.modal,
+      beHave: WEIGHT.beHave * unit.counts['be-have'],
+      prepositions: WEIGHT.prepositions * unit.counts.preposition,
+      possessives: WEIGHT.possessives * unit.counts.possessive,
+      timeAdverbs: WEIGHT.timeAdverbs * unit.counts['time-adverb'],
+      verbals: WEIGHT.verbals * unit.counts.verbal,
+    };
+    unit.total = GSDS_VARIABLES.reduce((sum, variable) => sum + unit.shares[variable.id], 0);
+  }
+
   return {
     words,
     sentences,
@@ -442,6 +541,7 @@ export function analyseGsds(text: string, options: Partial<GsdsOptions> = {}): G
     sds: score.sds,
     grade: score.grade,
     features,
+    units: breakdowns,
     tUnitRanges: units.map((unit) => ({ start: unit.start, end: unit.end, words: unit.wordEnd - unit.wordStart })),
     clauseRanges: clauses,
     mergedClauseRanges,

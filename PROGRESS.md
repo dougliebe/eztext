@@ -131,6 +131,12 @@
 - **Highlight renderer shows tint only** (user request): the stacked per-layer underlines are gone.
   Each nested layer still washes its own translucent background, and the washes compound on overlap,
   so depth remains visible without any decoration under the text.
+- **GSDS now highlights density, not tokens** (user request): the default view ranks T-units by their
+  exact share of the weighted total — `core/gsds.ts` computes a per-unit decomposition whose shares sum
+  back to the published contributions, which smoke verifies to 1e-9 — shades the top quarter with a
+  graded alpha, and the inspector lists the contributors (`30 words = 1.78`, `2 time adverbs = 1.20`, …)
+  under the canonical fix. The audit view keeps every counted feature for hand-checking the tally. The
+  three highlight checkboxes are gone; the options are view / top% / be-have.
 - **Every tool explains its groups** (`ToolResult.summary` + `groupDescriptions` + `groupExamples`):
   the results panel renders one general line above the stats and a per-group “what this means / what to
   do / one canonical fix” list under the filter pills, and the selection inspector shows the fix

@@ -1723,6 +1723,45 @@ button {
   background: var(--bg-1);
 }
 
+/* Per-unit score decomposition: which weighted shares make this range dense. */
+.selection__contributors {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.selection__contributors-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.selection__contributor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selection__contributor-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+  border-bottom: 1px dotted var(--dash);
+}
+
+.selection__contributor-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* The canonical fix for this kind of annotation, shown under the rule. */
 .selection__example {
   display: flex;
