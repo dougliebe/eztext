@@ -67,6 +67,56 @@ export async function scoreText(
   return (await response.json()) as SurprisalScores & { modelMs: number };
 }
 
+/** One guess at where the sentence is going: a few words, and what they cost. */
+export interface Continuation {
+  text: string;
+  /** Total −log₂ P of the whole phrase under the model. */
+  bits: number;
+  probability: number;
+  /** Pieces the model needed, which is more than the words shown. */
+  tokens: number;
+  words: number;
+}
+
+export interface ContinuationResult {
+  model: string;
+  contextTokens: number;
+  contextChars: number;
+  steps: number;
+  rows: Continuation[];
+  modelMs: number;
+  forwardMs: number;
+  forwardCalls: number;
+}
+
+/**
+ * Where the model would take the text next.
+ *
+ * Returns `null` rather than throwing when the process is not running: the
+ * inspector then simply does not offer a future it cannot compute, and the rest
+ * of the card — which comes from the run's own scores — still works.
+ */
+export async function continueFrom(
+  text: string,
+  options: { words?: number; branches?: number; signal?: AbortSignal } = {},
+): Promise<ContinuationResult | null> {
+  if (!text.trim()) return null;
+
+  try {
+    const response = await fetch(`${MODEL_ENDPOINT}/continue`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, words: options.words, branches: options.branches }),
+      signal: options.signal,
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as ContinuationResult;
+    return Array.isArray(payload?.rows) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Nearest familiar words by meaning, for every unfamiliar word in `text`.
  *

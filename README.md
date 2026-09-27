@@ -185,6 +185,20 @@ scripts/            smoke + ui-check runners, corpus and surprisal norms generat
 `/api/model`, which Vite proxies so the app stays same-origin. Nothing leaves the machine: the weights
 download once into `.models/` (gitignored, 125 MB) and every run after that is offline.
 
+Four endpoints, all on the one process (which serialises the model, since the ONNX session is not
+re-entrant):
+
+| Endpoint | Answers |
+| --- | --- |
+| `POST /score` | the whole document's surprisal, in 1024-token windows |
+| `POST /continue` | five five-word phrases the model would write from a given point |
+| `POST /similarity` | the nearest *listed* words by meaning, for the Common words tool |
+| `GET /health` | whether the weights are loaded, and which model |
+
+Both models warm up at startup rather than on first use. The embeddings are a separate lazily-loaded model
+whose first load takes seconds — long enough that the app's first `/similarity` call was being abandoned
+when the text changed under it, silently dropping the tool back to spelling-based suggestions.
+
 Surprisal is `−log₂ P(token | everything before it)` — how many bits the model needed to encode what you
 actually wrote. It is the strongest cheap signal for "where is this hard": human reading times track it
 closely, and it needs no hand-written rules about difficult words.
@@ -206,6 +220,43 @@ Both come from the same logits, so the second is free. Worked examples from the 
   1.28  " the"             —
   0.00  "The"             —          (nothing precedes it)
 ```
+
+### Where the model goes next
+
+Selecting a word asks the model a second, larger question: if the document stopped here, what would you
+write? The inspector answers with five phrases of five words, each starting from a different one of the
+model's likeliest next pieces.
+
+```
+Most writers 【revise.】
+
+  1  When you revise, you are        14.02 bits
+  2  The more you revise, the        14.09 bits
+  3  They revise to find new         19.25 bits
+  4  I have a lot of                 20.57 bits
+  5  If you are not writing,         20.64 bits
+```
+
+This is the useful reading of the model: the document goes on to say "They cut adjectives", and the
+interesting fact is not that the model found `They` unlikely but that it thought the sentence was heading
+somewhere else entirely. Bits are the whole phrase's `−log₂ P`, so rows are comparable: row 3 is
+`2^5.2 ≈ 37×` less likely than row 1.
+
+Deliberate design decisions, each of them measured rather than assumed:
+
+- **Not beam search.** The five opening pieces are *forced* to be distinct. Five beams that all open with
+  the same word answer a question nobody asked — the ranked next words are already shown in the card, so
+  what a reader cannot get anywhere else is the phrase.
+- **Not `generate()`.** transformers.js v4 beam search returns one sequence for `num_beams: 5,
+  num_return_sequences: 5`, drops the scores (`// TODO: scores`), and its sampler takes only the first of the
+  candidates it ranks. Tested in `.tmp/probe-continue5.mjs` before anything was built on it.
+- **Not the KV cache.** A cached step in this ONNX export costs ~45 ms whether the context is 32 tokens or
+  512, and disagrees with a full forward pass by whole logits — the graph takes no `position_ids` input, so a
+  hand-driven cache produces fluent, *wrong* text. Re-feeding the sequence is boring and obviously correct.
+- **Roughly 200 characters of context, about a second of work.** Cost is context × forwards, with all five
+  rows in every forward: 17 tokens 0.7 s, 69 tokens 1.8 s, 99 tokens 2.4 s, 175 tokens 4.2 s. Local context
+  decides the next phrase, so the cap buys responsiveness at no real cost in quality. Requests are debounced,
+  cached per position, and abandoned when the selection changes.
 
 ### Norms: where does a document sit?
 
@@ -311,8 +362,9 @@ surfaces and most of what we talk about lives in a specific one.
 - **Topbar metric** (the five ratios) shades the preview by that metric — click again to clear.
 - **Hover** a highlight or a coverage block → the same annotation lights up everywhere.
 - **Click** a highlight in the preview (or a coverage block) → the **inspector** pins to the top of the
-  results pane showing the selected text in context and, for model-scored words, the whole distribution the
-  model had at that position. **Click the same thing again to deselect.**
+  results pane showing the selected text in context, the word's own numbers, and — with the model running —
+  the five phrases it would write next (see *Where the model goes next*). **Click the same thing again to
+  deselect.**
 - The results pane carries **statistics per tool**, not a row per annotation: a thousand rows of
   "the = 1.2 bits" is noise, and annotations are browsable where they are. The `JSON` tab still has the
   full set for export.

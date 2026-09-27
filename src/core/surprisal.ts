@@ -25,6 +25,8 @@
 
 /** One candidate the model ranked above or near what was written. */
 export interface SurprisalAlternative {
+  /** Token id, for callers that need to walk on from it (the continuation tool does). */
+  id: number;
   /** Raw piece, which may carry a leading space (GPT-2 encodes word boundaries as spaces). */
   text: string;
   /** `−log₂ P` of this piece at this position. */
@@ -129,8 +131,6 @@ export function scoreWindow(input: {
   const scorable = Math.min(positions, ids.length - 1);
 
   const tokens: ScoredToken[] = [];
-  const bestIds: number[] = [];
-  const bestValues: number[] = [];
 
   for (let local = 0; local < ids.length; local += 1) {
     const index = indexOffset + local;
@@ -144,45 +144,10 @@ export function scoreWindow(input: {
 
     if (local > 0 && local <= scorable) {
       const base = (local - 1) * vocab;
-
-      let max = -Infinity;
-      for (let v = 0; v < vocab; v += 1) {
-        const value = logits[base + v];
-        if (value > max) max = value;
-      }
-      let sum = 0;
-      for (let v = 0; v < vocab; v += 1) sum += Math.exp(logits[base + v] - max);
-      const logZ = max + Math.log(sum);
-
-      const logProbability = logits[base + ids[local]] - logZ;
-      bits = -logProbability / LN2;
-
-      // Top-k in a single pass, keeping the best ids in descending order.
-      bestIds.length = 0;
-      bestValues.length = 0;
-      for (let v = 0; v < vocab; v += 1) {
-        const value = logits[base + v];
-        // Cheap rejection: with k candidates held, nothing worse can enter.
-        if (bestValues.length === topK && value <= bestValues[topK - 1]) continue;
-        let at = bestValues.length;
-        while (at > 0 && bestValues[at - 1] < value) at -= 1;
-        bestValues.splice(at, 0, value);
-        bestIds.splice(at, 0, v);
-        if (bestValues.length > topK) {
-          bestValues.pop();
-          bestIds.pop();
-        }
-      }
-
-      alternatives = bestIds.map((id, rank) => {
-        const candidateLogProbability = bestValues[rank] - logZ;
-        return {
-          text: decode(id),
-          bits: -candidateLogProbability / LN2,
-          probability: Math.exp(candidateLogProbability),
-          gain: (candidateLogProbability - logProbability) / LN2,
-        };
-      });
+      const written = logits[base + ids[local]];
+      const ranked = rankNext({ logits, base, vocab, topK, decode, againstLogit: written });
+      bits = -((written - ranked.logZ) / LN2);
+      alternatives = ranked.alternatives;
     }
 
     // Offsets are filled in by `summarise`, which knows the whole document.
@@ -190,6 +155,76 @@ export function scoreWindow(input: {
   }
 
   return tokens;
+}
+
+/**
+ * Rank the distribution a single position of `logits` holds.
+ *
+ * `scoreWindow` calls this once per token, against the token that was actually
+ * written. The model process's continuation walk calls it directly instead,
+ * because there the next token is not in the text yet — it is whatever the
+ * model is about to choose — and it is the same ranking either way.
+ *
+ * `logits` is read at `base + v` for `v` in `[0, vocab)`, so a caller walking a
+ * batch passes that row's own offset and needs no copy of the tensor.
+ */
+export function rankNext(input: {
+  logits: Float32Array | number[];
+  /** Offset of this position's row within `logits`. */
+  base: number;
+  vocab: number;
+  topK: number;
+  decode: (id: number) => string;
+  /**
+   * Raw logit of the token actually written, which the `gain` figures are
+   * measured against (this function subtracts `logZ`, so the baseline is a
+   * proper log-probability). Omitted by a continuation, where the top choice is
+   * the baseline and the best candidate therefore saves nothing.
+   */
+  againstLogit?: number;
+}): { alternatives: SurprisalAlternative[]; logZ: number } {
+  const { logits, base, vocab, topK, decode } = input;
+
+  let max = -Infinity;
+  for (let v = 0; v < vocab; v += 1) {
+    const value = logits[base + v];
+    if (value > max) max = value;
+  }
+  let sum = 0;
+  for (let v = 0; v < vocab; v += 1) sum += Math.exp(logits[base + v] - max);
+  const logZ = max + Math.log(sum);
+
+  // Top-k in a single pass, keeping the best ids in descending order.
+  const bestIds: number[] = [];
+  const bestValues: number[] = [];
+  for (let v = 0; v < vocab; v += 1) {
+    const value = logits[base + v];
+    // Cheap rejection: with k candidates held, nothing worse can enter.
+    if (bestValues.length === topK && value <= bestValues[topK - 1]) continue;
+    let at = bestValues.length;
+    while (at > 0 && bestValues[at - 1] < value) at -= 1;
+    bestValues.splice(at, 0, value);
+    bestIds.splice(at, 0, v);
+    if (bestValues.length > topK) {
+      bestValues.pop();
+      bestIds.pop();
+    }
+  }
+
+  const baseline = (typeof input.againstLogit === 'number' ? input.againstLogit : (bestValues[0] ?? 0)) - logZ;
+
+  const alternatives = bestIds.map((id, rank) => {
+    const candidateLogProbability = bestValues[rank] - logZ;
+    return {
+      id,
+      text: decode(id),
+      bits: -candidateLogProbability / LN2,
+      probability: Math.exp(candidateLogProbability),
+      gain: (candidateLogProbability - baseline) / LN2,
+    };
+  });
+
+  return { alternatives, logZ };
 }
 
 /**

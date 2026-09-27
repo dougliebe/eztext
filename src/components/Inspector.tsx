@@ -1,4 +1,6 @@
-import type { SurprisalScores, ScoredToken, ScoredWord } from '../core/surprisal';
+import { useEffect, useRef, useState } from 'react';
+import { continueFrom, type Continuation } from '../core/model-client';
+import type { ScoredWord, SurprisalScores } from '../core/surprisal';
 import type { ResolvedAnnotation } from '../core/types';
 
 interface InspectorProps {
@@ -18,12 +20,11 @@ interface InspectorProps {
  * is not the number, it is *what else the word could have been*.
  */
 export function Inspector({ selection, scores, text, onClose }: InspectorProps) {
+  // Before the early return: hooks cannot come and go with the selection.
+  const continuations = useContinuation(text, selection, scores !== null);
   if (!selection) return null;
 
   const word = scores?.words.find((candidate) => candidate.start === selection.start) ?? null;
-  // The alternatives belong to the position where the word was chosen, which is
-  // its first piece — a continuation piece would report the wrong distribution.
-  const token = word ? (scores?.tokens.find((candidate) => candidate.start === word.start) ?? null) : null;
   const bits = typeof selection.data?.bits === 'number' ? selection.data.bits : null;
   const suggestions = readSuggestions(selection.data);
 
@@ -52,18 +53,128 @@ export function Inspector({ selection, scores, text, onClose }: InspectorProps) 
 
       <p className="inspector__context">{contextAround(text, selection.start, selection.end)}</p>
 
-      {word && token ? (
-        <Alternatives word={word} token={token} />
-      ) : (
-        <p className="inspector__detail">{selection.detail ?? 'No further detail for this range.'}</p>
-      )}
+      {word ? <WordStats word={word} /> : <p className="inspector__detail">{selection.detail ?? 'No further detail for this range.'}</p>}
+
+      <Continuations rows={continuations.rows} pending={continuations.pending} enabled={scores !== null} />
 
       {suggestions.length > 0 && <Suggestions items={suggestions} />}
     </section>
   );
 }
 
-function Alternatives({ word, token }: { word: ScoredWord; token: ScoredToken }) {
+/**
+ * Where the model would take the sentence from here.
+ *
+ * Requested per selection rather than computed with the run: five branches of
+ * five words take the model about a second, which is a fine price for one
+ * deliberate click and far too much to pay for every keystroke.
+ */
+function useContinuation(text: string, selection: ResolvedAnnotation | null, enabled: boolean) {
+  const cache = useRef(new Map<string, Continuation[]>());
+  const [fetched, setFetched] = useState<{ key: string; rows: Continuation[] } | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const prefix = selection ? text.slice(0, selection.end) : '';
+  // Keyed on the text the model actually sees (its tail) as well as the offset,
+  // so editing *after* the selection — which cannot change the continuation —
+  // reuses the answer, while editing before it does not.
+  const key = selection ? `${selection.end}\u0000${prefix.slice(-48)}` : '';
+
+  useEffect(() => {
+    if (!key || !enabled) {
+      setPending(false);
+      return;
+    }
+
+    const cached = cache.current.get(key);
+    if (cached) {
+      setFetched({ key, rows: cached });
+      setPending(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPending(true);
+    // A click that is immediately followed by another click should pay for one
+    // continuation, not two: the model process computes what it is given.
+    const timer = window.setTimeout(() => {
+      void continueFrom(prefix, { signal: controller.signal }).then((result) => {
+        if (controller.signal.aborted) return;
+        setPending(false);
+        if (!result) return;
+        cache.current.set(key, result.rows);
+        setFetched({ key, rows: result.rows });
+      });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [key, prefix, enabled]);
+
+  return { rows: fetched && fetched.key === key ? fetched.rows : null, pending };
+}
+
+function Continuations({
+  rows,
+  pending,
+  enabled,
+}: {
+  rows: Continuation[] | null;
+  pending: boolean;
+  enabled: boolean;
+}) {
+  return (
+    <div className="inspector__body">
+      <p className="inspector__lead">
+        Where the model goes next
+        {rows && rows.length > 0 && <span className="inspector__hint">five words, from this point</span>}
+      </p>
+
+      {!enabled ? (
+        <p className="inspector__detail">
+          Run the model to see the phrases it would write from here.
+        </p>
+      ) : rows === null ? (
+        <p className="inspector__detail" aria-busy={pending || undefined}>
+          {pending ? 'Asking the model…' : 'The model process stopped, so there is no continuation to show.'}
+        </p>
+      ) : (
+        <table className="next">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Next words</th>
+              <th scope="col">Bits</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rank) => (
+              <tr key={row.text}>
+                <td className="next__rank">{rank + 1}</td>
+                <td className="next__text">{row.text}</td>
+                <td className="next__bits" title="−log₂ P of the whole phrase">
+                  {row.bits.toFixed(2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The selected word's own numbers.
+ *
+ * The ranked next-token table that used to live here is gone: the inspector now
+ * shows where the model goes *from here*, which is the more useful question of
+ * the two, and the word it expected is kept as a single field rather than a
+ * table of near-misses.
+ */
+function WordStats({ word }: { word: ScoredWord }) {
   const probability = 2 ** -word.bits;
   const expected = word.expected;
 
@@ -76,59 +187,10 @@ function Alternatives({ word, token }: { word: ScoredWord; token: ScoredToken })
           value={probability < 0.001 ? probability.toExponential(1) : `${(probability * 100).toFixed(2)}%`}
         />
         <Field label="Pieces" value={String(word.tokenCount)} />
-        {expected && <Field label="Could have saved" value={`${expected.gain.toFixed(2)} bits`} tone="warn" />}
-      </div>
-
-      <p className="inspector__detail">
-        {expected ? (
-          <>
-            The model expected <code>{expected.text}</code> here — writing it would have cost{' '}
-            {expected.gain.toFixed(2)} bits less.
-          </>
-        ) : (
-          <>The model expected exactly this word, so there is no cheaper alternative to compare against.</>
+        {expected && (
+          <Field label="Cheaper word" value={`${expected.text.trim() || '␣'} · ${expected.gain.toFixed(2)} bits`} tone="warn" />
         )}
-      </p>
-
-      {token.alternatives.length > 0 && (
-        <table className="alts">
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">Word the model predicted</th>
-              <th scope="col">Probability</th>
-              <th scope="col">Bits</th>
-              <th scope="col">Bits saved</th>
-            </tr>
-          </thead>
-          <tbody>
-            {/* Rank 0 is the model's own first choice; the written word is
-                marked where it lands, which is the whole story in one glance. */}
-            {token.alternatives.map((alternative, rank) => {
-              const written = alternative.text === token.text;
-              return (
-                <tr key={`${alternative.text}-${rank}`} className={written ? 'alts__row--written' : undefined}>
-                  <td className="alts__rank">{rank + 1}</td>
-                  <td className="alts__word">
-                    {alternative.text.trim() || '␣'}
-                    {written && <span className="alts__tag">written</span>}
-                  </td>
-                  <td className="alts__prob">
-                    <span className="alts__bar" style={{ width: `${Math.max(2, alternative.probability * 100)}%` }} />
-                    <span className="alts__pct">
-                      {alternative.probability < 0.001
-                        ? alternative.probability.toExponential(1)
-                        : `${(alternative.probability * 100).toFixed(2)}%`}
-                    </span>
-                  </td>
-                  <td className="alts__bits">{alternative.bits.toFixed(2)}</td>
-                  <td className="alts__gain">{written ? '—' : alternative.gain.toFixed(2)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+      </div>
     </div>
   );
 }

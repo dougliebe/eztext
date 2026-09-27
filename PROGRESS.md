@@ -8,8 +8,11 @@
 - The **Common words tool** is in: it flags exactly what `% unfamiliar` counts and, when a flagged word
   is selected, names the nearest common words — by meaning while the local model is running, by word
   family always. The list is the ~24,600 words most US readers know, so ordinary prose is usually clean.
-- `main` is **2 commits ahead of `origin/main`** (the Dale–Chall work), not yet pushed.
-- `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
+- Selecting a word now shows **where the model goes next**: five five-word phrases, each from a different
+  one of the model's likeliest next pieces (`POST /continue`). The ranked next-token table it replaced
+  answered "what word did I miss"; the phrases answer "where is this sentence heading".
+- `main` is **1 commit ahead of `origin/main`** at the time of writing, plus the work below, not yet pushed.
+- `npm run build`, `npm run smoke` and `npm run ui-check` all pass (62 assertions in the browser, 151 in smoke).
 
 ## In progress
 - Nothing.
@@ -175,6 +178,33 @@
   and in the coverage strip alike.
 - Verified the Dale-Chall work that landed in parallel still functions against the stats-only panels
   (7 stats each, 0 row lists) and that its selection card still appears.
+- **Where the model goes next**: the inspector's ranked next-token table is replaced by five five-word
+  continuations, asked of a new `POST /continue` (`.tmp/probe-continue*.mjs` hold the measurements that
+  shaped it).
+  - The five opening pieces are forced to be **distinct** — five beams that all start with the same word
+    say nothing — and each branch then walks greedily, accumulating its own exact `−log₂ P` per piece.
+  - `generate()` is unusable for this: `num_beams: 5, num_return_sequences: 5` returned **one** row, the
+    scores are a `// TODO` in v4.3, and the sampler takes only the first of the candidates it ranks.
+  - The KV cache is unusable too: the merged ONNX graph takes no `position_ids` input, so a hand-driven
+    cache step disagreed with a full forward pass by **3.7 logits** while producing fluent text. That is
+    the dangerous kind of wrong, and it is why the walk re-feeds the sequence instead.
+  - Cost is context × forwards, all five rows in every forward: 17 tokens 0.7 s, 69 tokens 1.8 s, 99 tokens
+    2.4 s, 175 tokens 4.2 s. Hence a 200-character context cap (~1 s), a debounce, a per-position cache,
+    and an abort when the selection moves on.
+  - `scoreWindow`'s ranking was extracted as `rankNext(logits, base, vocab, topK, decode, againstLogit?)`
+    so the walk reuses the app's own top-k code rather than growing a second copy, and
+    `SurprisalAlternative` gained the token `id` the walk needs.
+  - The refactor was wrong on the first attempt in a way smoke caught immediately: `againstLogit` was
+    handed a raw logit where a log-probability was wanted, so every `gain` was off by `logZ`. Worth
+    remembering that this is exactly the class of error the synthetic-vocabulary tests exist for.
+  - EOS branches are dropped when branching (a row that opens with end-of-text has no words to show) and
+    never displayed when they end a phrase.
+  - The table is bits-only and 620 px wide: probability is a monotone transform of bits, and the results
+    pane is as wide as the window, which stranded the numbers a screen away from the phrases.
+- **Fixed a latent server bug while restarting it**: `warmEmbeddings()` existed "for the server's startup
+  path" but was never called, so a fresh process paid the embedding load inside the first `/similarity`
+  request — which the app abandons whenever the text changes. The Common words tool then silently fell
+  back to spelling suggestions, which is how the ui-check surfaced it (a real flake, not a test artifact).
 
 ## Pane vocabulary
 
@@ -193,6 +223,11 @@ the top of the results pane when something in the preview is selected).
 - Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded
   word) — the data is already in the tool's annotations as `data.gain`.
 - Surprisal windows arrive all at once; streaming them per window would give progress on long documents.
+- Continuations are greedy *within* a branch. A real beam search (proper joint scoring across branches)
+  needs a working KV cache, which this ONNX export does not offer — see the README for the measurements.
+  If a better model is ever swapped in, the cheapest real gain is a **larger context** (200 characters is
+  a responsiveness choice, ~1.3 s) or more branches; `POST /continue` takes `words`, `branches` and
+  `contextChars`.
 
 - Context-aware suggestions: the common-word neighbours are word-level, so a masked pass over the
   sentence (“…the patience it demands is [MASK]”) would use the surrounding text as well — one forward

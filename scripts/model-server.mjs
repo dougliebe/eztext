@@ -25,7 +25,7 @@ import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { AutoModelForCausalLM, AutoTokenizer, Tensor, env } from '@huggingface/transformers';
-import { embeddingInfo, similarityForText } from './word-embeddings.mjs';
+import { embeddingInfo, similarityForText, warmEmbeddings } from './word-embeddings.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -53,6 +53,7 @@ env.allowLocalModels = true;
 let scoreWindow;
 let summarise;
 let cleanPiece;
+let rankNext;
 let coreLoaded = false;
 
 async function loadCore() {
@@ -78,6 +79,7 @@ async function loadCore() {
   scoreWindow = core.scoreWindow;
   summarise = core.summarise;
   cleanPiece = core.cleanPiece;
+  rankNext = core.rankNext;
   coreLoaded = true;
 }
 
@@ -187,6 +189,230 @@ async function score(text, topK = TOP_K) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Continuation                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Where the model would go next, as phrases rather than a single word.
+ *
+ * The interesting question about a sentence is not which word the model wanted
+ * at this position — it is where it thinks the sentence is heading. So: take the
+ * five likeliest next pieces, let each of them continue, and keep five words of
+ * each. That is five hypotheses about the shape of the sentence, which is
+ * something a writer can disagree with.
+ *
+ * Deliberately not beam search, and not `generate()`:
+ *   - the app already shows the model's ranked next words, which is what beam
+ *     search would spend its width on; what it cannot show is the phrase, so the
+ *     five first pieces are *forced* to be distinct. Five rows that all open
+ *     with the same word answer a question nobody asked.
+ *   - transformers.js beam search returns one sequence and drops the scores
+ *     (`// TODO: scores` in v4.3), and its sampler takes only the first candidate
+ *     per row, so `num_beams: 5` is greedy with extra steps. Measured, not assumed.
+ *
+ * Each branch walks greedily from its own first piece, and the bits it reports
+ * are the sum of the per-step surprises — the exact −log₂ P of that whole phrase
+ * under the model, not an estimate.
+ *
+ * The KV cache is deliberately unused. A cached step in this ONNX graph takes
+ * ~45 ms whether the context is 32 tokens or 512 (cost is per-call, not per-token),
+ * and it disagrees with a full forward pass by whole logits because the graph has
+ * no `position_ids` input — so a hand-driven cache produces fluent, wrong text.
+ * Re-feeding the sequence is boring, obviously correct, and its cost is bounded
+ * by the context cap below.
+ */
+const CONTINUATION = {
+  /**
+   * Characters of context. Kept short on purpose: local context decides the next
+   * phrase, and this cap is what the wait is made of. Measured on this machine,
+   * five branches of five words: 17 tokens 0.7 s, 69 tokens 1.8 s, 99 tokens
+   * 2.4 s, 175 tokens 4.2 s — the cost is context × forwards, and every forward
+   * carries all five rows.
+   */
+  contextChars: 200,
+  words: 5,
+  branches: 5,
+  /** Hard cap on pieces per branch, whatever five words turn out to need. */
+  maxTokens: 16,
+};
+
+/**
+ * Words *started* by a run of pieces.
+ *
+ * GPT-2 encodes a word boundary as a leading space, so a piece that opens with
+ * whitespace begins a word and pieces like "'s" extend the one before it. Past
+ * `words + 1` words the first five are complete and the sixth can be cut.
+ */
+function startedWords(pieces) {
+  let count = 0;
+  for (let index = 0; index < pieces.length; index += 1) {
+    if (index === 0 || /^\s/.test(pieces[index])) count += 1;
+  }
+  return count;
+}
+
+/** The first `words` words of a branch, as display text. */
+function phraseOf(pieces, words) {
+  return pieces
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, words)
+    .join(' ');
+}
+
+async function continueFrom(text, options = {}) {
+  await loadModel();
+  return enqueue(async () => {
+    const started = performance.now();
+    const words = Math.min(Math.max(Number(options.words) || CONTINUATION.words, 1), 12);
+    const branches = Math.min(Math.max(Number(options.branches) || CONTINUATION.branches, 1), 10);
+    const maxTokens = Math.min(Math.max(Number(options.maxTokens) || CONTINUATION.maxTokens, words), 40);
+    const contextChars = Math.min(Math.max(Number(options.contextChars) || CONTINUATION.contextChars, 40), 4000);
+
+    // Same normalisation as scoring: a lone \r is unmodellable for GPT-2.
+    const normalised = text.replace(/\r\n?/g, '\n');
+    let context = normalised;
+    if (context.length > contextChars) {
+      // Start at a word boundary, so the prompt does not open mid-word.
+      const cut = context.length - contextChars;
+      const space = context.indexOf(' ', cut);
+      context = context.slice(space === -1 ? cut : space + 1);
+    }
+
+    const empty = {
+      model: MODEL,
+      contextTokens: 0,
+      contextChars: context.length,
+      steps: 0,
+      rows: [],
+      modelMs: 0,
+      forwardMs: 0,
+      forwardCalls: 0,
+    };
+    if (!context.trim()) return empty;
+
+    const encoded = await tokenizer(context);
+    const contextIds = Array.from(encoded.input_ids.data).map(Number);
+    if (contextIds.length < 2) return { ...empty, contextTokens: contextIds.length };
+
+    const eosId = tokenizer.eos_token_id ?? 50256;
+    let forwardMs = 0;
+    let forwardCalls = 0;
+
+    // Rows are equal length by construction, so the batch needs no padding and
+    // no attention-mask trickery: just a full rectangle of ones.
+    const forward = async (rows) => {
+      const width = rows[0].length;
+      const inputIds = new Tensor(
+        'int64',
+        BigInt64Array.from(rows.flat().map((id) => BigInt(id))),
+        [rows.length, width],
+      );
+      const attentionMask = new Tensor(
+        'int64',
+        BigInt64Array.from(rows.flatMap(() => new Array(width).fill(1n))),
+        [rows.length, width],
+      );
+      const at = performance.now();
+      const output = await model({ input_ids: inputIds, attention_mask: attentionMask });
+      forwardMs += performance.now() - at;
+      forwardCalls += 1;
+      return output;
+    };
+
+    const seed = await forward([contextIds]);
+    const vocab = seed.logits.dims.at(-1);
+    // A few extra candidates, because a branch that opens with end-of-text has no
+    // words to show: the model is saying the sentence stops here. Skipping it is
+    // the honest way to keep five *phrases* — there is nothing to display.
+    const { alternatives } = rankNext({
+      logits: seed.logits.data,
+      base: (contextIds.length - 1) * vocab,
+      vocab,
+      topK: branches + 4,
+      decode: decodePiece,
+    });
+
+    const rows = alternatives
+      .filter((alternative) => alternative.id !== eosId)
+      .slice(0, branches)
+      .map((alternative) => ({
+        ids: [alternative.id],
+        pieces: [alternative.text],
+        bits: alternative.bits,
+        done: false,
+      }));
+
+    let step = 1;
+    while (step < maxTokens) {
+      const active = rows.filter((row) => !row.done);
+      if (active.length === 0) break;
+
+      const width = contextIds.length + step;
+      const output = await forward(active.map((row) => [...contextIds, ...row.ids]));
+
+      for (let index = 0; index < active.length; index += 1) {
+        const row = active[index];
+        const { alternatives: ranked } = rankNext({
+          logits: output.logits.data,
+          base: (index * width + width - 1) * vocab,
+          vocab,
+          topK: 1,
+          decode: decodePiece,
+        });
+        const next = ranked[0];
+        const piece = decodePiece(next.id);
+        // End of text ends the phrase: it is not part of what the model would
+        // write, and its bits belong to no words.
+        const ended = next.id === eosId;
+        if (!ended) {
+          row.ids.push(next.id);
+          row.pieces.push(piece);
+          row.bits += next.bits;
+          row.done = startedWords(row.pieces) > words;
+        } else {
+          row.done = true;
+        }
+      }
+
+      step += 1;
+    }
+
+    // Two branches can converge on the same words; keep the likelier spelling of
+    // the two, and rank the survivors by the probability of the whole phrase.
+    const seen = new Set();
+    const results = [];
+    for (const row of rows) {
+      const phrase = phraseOf(row.pieces, words);
+      const key = phrase.toLowerCase();
+      if (!phrase || seen.has(key)) continue;
+      seen.add(key);
+      results.push({
+        text: phrase,
+        bits: row.bits,
+        probability: 2 ** -row.bits,
+        tokens: row.ids.length,
+        words: phrase.split(' ').length,
+      });
+    }
+    results.sort((a, b) => a.bits - b.bits);
+
+    return {
+      model: MODEL,
+      contextTokens: contextIds.length,
+      contextChars: context.length,
+      steps: step,
+      rows: results,
+      modelMs: performance.now() - started,
+      forwardMs,
+      forwardCalls,
+    };
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* HTTP                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -268,6 +494,29 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  // Where the model would take the sentence next, five words deep.
+  if (url.pathname === '/continue' && request.method === 'POST') {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+
+    let body;
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    } catch {
+      json(response, 400, { error: 'body must be JSON' });
+      return;
+    }
+
+    const text = typeof body.text === 'string' ? body.text : '';
+    try {
+      json(response, 200, await continueFrom(text, body));
+    } catch (error) {
+      console.error('continuation failed:', error);
+      json(response, 500, { error: String(error?.message ?? error) });
+    }
+    return;
+  }
+
   if (url.pathname === '/score' && request.method === 'POST') {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -318,6 +567,8 @@ if (args.includes('--help')) {
       '  npm run model                     serve on http://localhost:5174',
       '  npm run model -- --score "text"   score a string and print it',
       '  npm run model -- --file draft.txt score a file and print it',
+      '  npm run model -- --continue "text"  five five-word continuations',
+      '  npm run model -- --next "text"      same, with a wider context',
       '',
       '  MODEL=Xenova/gpt2-medium          override the model',
       '  MODEL_FILE=...                    override the onnx file',
@@ -329,6 +580,25 @@ if (args.includes('--help')) {
 
 const inline = flag('score');
 const file = flag('file');
+const onwards = flag('continue') ?? flag('next');
+
+if (onwards !== undefined) {
+  const context = flag('continue') !== undefined ? onwards : (file ? readFileSync(file, 'utf8') : onwards);
+  const result = await continueFrom(context, {
+    ...(Number.isFinite(Number(flag('words'))) ? { words: Number(flag('words')) } : {}),
+    ...(Number.isFinite(Number(flag('branches'))) ? { branches: Number(flag('branches')) } : {}),
+    ...(Number.isFinite(Number(flag('context'))) ? { contextChars: Number(flag('context')) } : {}),
+  });
+  console.log(
+    `\n${result.model} — ${result.rows.length} continuations from ${result.contextTokens} tokens of context` +
+      ` in ${Math.round(result.modelMs)} ms (${result.forwardCalls} forwards, ${Math.round(result.forwardMs)} ms)`,
+  );
+  console.log('\n   bits   next words');
+  for (const row of result.rows) {
+    console.log(`  ${row.bits.toFixed(2).padStart(5)}   ${JSON.stringify(row.text)}`);
+  }
+  process.exit(0);
+}
 
 if (inline !== undefined || file !== undefined) {
   const text = file ? readFileSync(file, 'utf8') : inline;
@@ -365,4 +635,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('first run downloads the weights into .models/ — later runs are offline');
   // Warm up in the background so the first request is not the one that pays.
   loadModel().catch((error) => console.error('model failed to load:', error));
+  // The embeddings are a separate, lazily loaded model, and loading it takes
+  // seconds. Without this the first /similarity call from a fresh server spends
+  // that time in the request — which the app usually abandons when the text
+  // changes under it, so the tool silently falls back to spelling suggestions.
+  warmEmbeddings().catch((error) => console.error('embeddings failed to load:', error));
 });

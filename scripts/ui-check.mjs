@@ -625,30 +625,54 @@ if (!health?.ready) {
   await page.waitForSelector('.inspector', { timeout: 5000 });
   await page.waitForTimeout(200);
 
+  // The card now answers "where does the model go next": five continuations of
+  // five words, fetched for this selection. It takes the model about a second,
+  // hence the generous timeout — and the wait is the point of the check, since a
+  // silently empty table would otherwise look like a pass.
+  const continuation = await page
+    .waitForSelector('.next tbody tr', { timeout: 30000 })
+    .then(() => true)
+    .catch(() => false);
+  await page.waitForTimeout(100);
+
   const card = await page.evaluate(() => ({
     word: document.querySelector('.inspector__word')?.textContent,
     bits: document.querySelector('.inspector__bits')?.textContent,
-    rows: [...document.querySelectorAll('.alts tbody tr')].map((tr) =>
+    rows: [...document.querySelectorAll('.next tbody tr')].map((tr) =>
       [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()),
     ),
-    detail: document.querySelector('.inspector__detail')?.textContent ?? '',
+    stats: [...document.querySelectorAll('.inspector__stat')].map((node) => ({
+      label: node.querySelector('.inspector__stat-label')?.textContent ?? '',
+      value: node.querySelector('.inspector__stat-value')?.textContent ?? '',
+    })),
   }));
 
   check(
-    'selecting a word shows what the model predicted instead',
-    card.rows.length >= 3 && card.rows.every((row) => row.length === 5),
-    `${card.rows.length} alternatives for “${card.word}” (${card.bits})`,
+    'selecting a word shows where the model goes next',
+    continuation && card.rows.length >= 3 && card.rows.every((row) => row.length === 3),
+    continuation
+      ? `${card.rows.length} continuations for “${card.word}”: ${card.rows.map((row) => row[1]).join(' / ').slice(0, 120)}`
+      : 'no continuation table appeared within 30 s',
   );
   check(
-    'alternatives are ranked by probability',
-    card.rows.every((row, index) => {
-      if (index === 0) return true;
-      const asNumber = (value) => Number(value.replace('%', '').replace(/e-?\d+/, (m) => m)) || 0;
-      return asNumber(row[2]) <= asNumber(card.rows[index - 1][2]);
-    }),
-    card.rows.map((row) => `${row[1]}=${row[2]}`).join(' '),
+    'every continuation is a short phrase',
+    continuation && card.rows.every((row) => row[1].split(/\s+/).length >= 3 && row[1].split(/\s+/).length <= 6),
+    continuation ? card.rows.map((row) => row[1].split(/\s+/).length).join(', ') + ' words' : 'n/a',
   );
-  check('the card names the expected word', /expected/.test(card.detail), card.detail.slice(0, 120));
+  check(
+    'continuations are ranked by the probability of the whole phrase',
+    continuation &&
+      card.rows.every((row, index) => {
+        if (index === 0) return true;
+        return Number(row[2]) >= Number(card.rows[index - 1][2]);
+      }),
+    continuation ? card.rows.map((row) => row[2]).join(' ≤ ') : 'n/a',
+  );
+  check(
+    'the card names the word the model expected here',
+    card.stats.some((stat) => /cheaper/i.test(stat.label) && stat.value.length > 1),
+    card.stats.map((stat) => `${stat.label}=${stat.value}`).join(' '),
+  );
 
   check(
     'the results pane lists statistics, not every annotation',
