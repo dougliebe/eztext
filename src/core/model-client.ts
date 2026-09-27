@@ -76,7 +76,7 @@ export async function scoreText(
  */
 export async function fetchSimilarity(
   text: string,
-  options: { k?: number; signal?: AbortSignal } = {},
+  options: { k?: number; threshold?: number; signal?: AbortSignal } = {},
 ): Promise<SimilaritySignal | null> {
   if (!text.trim()) return null;
 
@@ -84,14 +84,22 @@ export async function fetchSimilarity(
     const response = await fetch(`${MODEL_ENDPOINT}/similarity`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, k: options.k }),
+      body: JSON.stringify({ text, k: options.k, threshold: options.threshold }),
       signal: options.signal,
     });
     if (!response.ok) return null;
 
-    const payload = (await response.json()) as { model?: string; words?: Record<string, SemanticNeighbour[]> };
+    const payload = (await response.json()) as {
+      model?: string;
+      threshold?: number;
+      words?: Record<string, SemanticNeighbour[]>;
+    };
     if (!payload.words || typeof payload.words !== 'object') return null;
-    return { model: payload.model ?? 'unknown', words: payload.words };
+    return {
+      model: payload.model ?? 'unknown',
+      threshold: typeof payload.threshold === 'number' ? payload.threshold : (options.threshold ?? 0),
+      words: payload.words,
+    };
   } catch {
     return null;
   }

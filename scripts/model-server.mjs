@@ -252,8 +252,16 @@ const server = createServer(async (request, response) => {
     }
 
     try {
-      const requested = Number(body.k);
-      json(response, 200, await similarityForText(text, Number.isFinite(requested) ? { k: requested } : {}));
+      const requestedK = Number(body.k);
+      const requestedThreshold = Number(body.threshold);
+      json(
+        response,
+        200,
+        await similarityForText(text, {
+          ...(Number.isFinite(requestedK) ? { k: requestedK } : {}),
+          ...(Number.isFinite(requestedThreshold) ? { threshold: requestedThreshold } : {}),
+        }),
+      );
     } catch (error) {
       json(response, 500, { error: String(error?.message ?? error) });
     }

@@ -335,7 +335,7 @@ and they are the ones with hover tooltips explaining the definition.
 | Words / sentence | `words ÷ sentences` |
 | Chars / word | Letters and digits only — punctuation, spaces and apostrophes excluded. This is the divisor ARI and Coleman–Liau use |
 | % polysyllabic | Share of words with 3+ syllables (estimated from vowel groups) |
-| % unfamiliar | Share of words outside the **common-word list** — the ~24,600 words most US readers know |
+| % unfamiliar | Share of words outside the **common-word list** — the words most US readers know. The bar is adjustable (Common words → Prevalence threshold) |
 | Syllables / word | Estimated with the same vowel-group heuristic |
 
 Each of the five ratios carries a small **percentile chip**, computed from its z-score against the CORPUS
@@ -417,7 +417,7 @@ metric                     mean       sd  p10      p50      p90
 wordsPerSentence        21.2829   9.2330    11.34    20.25    31.33
 charactersPerWord       4.4419   0.4345     3.92     4.40     5.01
 polysyllabicShare       0.0958   0.0600     0.03     0.09     0.18
-unfamiliarShare         0.1757   0.0990     0.06     0.16     0.31
+unfamiliarShare         0.0507   0.0394     0.01     0.04     0.10
 syllablesPerWord        1.4147   0.1649     1.22     1.39     1.63
 ```
 
@@ -436,7 +436,7 @@ metric                  max error  worst at
 wordsPerSentence            8.0 pp  true p75 claimed p67 (z 0.44)
 charactersPerWord           4.1 pp  true p53 claimed p49 (z -0.03)
 polysyllabicShare           6.6 pp  true p47 claimed p40 (z -0.24)
-unfamiliarShare             6.7 pp  true p51 claimed p44 (z -0.14)
+unfamiliarShare             9.3 pp  true p60 claimed p51 (z 0.02)
 syllablesPerWord            6.2 pp  true p52 claimed p46 (z -0.10)
 ```
 
@@ -445,9 +445,11 @@ distribution, where density is highest and the mean/median gap shifts everything
 well behaved. If exact percentiles are ever needed, the fix is to ship the quantile table — which is what
 an earlier revision did, at 6.2 KB.
 
-Two things this makes obvious. First, the corpus averages **17.6% unfamiliar** words, so an absolute
-"over 10% is hard" rule (which this README previously suggested) fires on nearly everything — the
-bundled sample sits at a perfectly ordinary `z +0.3` (63rd percentile). Second, CLEAR excerpts are a
+Two things this makes obvious. First, the corpus averages **5.1% unfamiliar** words — one word in
+twenty is outside a 24,600-word knowledge list — so an absolute "over 10% is hard" rule (which this
+README previously suggested) would fire on almost nothing. Second, that average is what the
+*threshold* moves: the norms are generated with the default floor, and raising the setting makes a
+document score higher against them. Second, CLEAR excerpts are a
 fixed ~174 words, so comparing raw counts against them would be meaningless; only length-normalised
 ratios are recorded.
 
@@ -475,8 +477,23 @@ ordinary prose now scores ~5% unfamiliar (the CLEAR corpus mean) instead of ~18%
 words before anything is flagged — `enormous`, `merely` and `nevertheless` are all words most readers
 know.
 
-The list is deliberately narrow (words known to 80% of fourth-graders), so ordinary adult prose scores
-high: the bundled sample text lands at ~21% unfamiliar. That is the formula working as intended, not a bug.
+### The prevalence threshold
+
+How well known a word must be is a **setting, not a constant**: the Common words tool exposes
+`Prevalence threshold` (1.6…2.6), and because the topbar metric, the preview heatmap, the tool and the
+embedding service all ask the same `isFamiliarWord`, every one of them moves together — the tool's
+count always equals `% unfamiliar`, at any setting.
+
+Each stored word keeps the score it achieved, so raising the threshold narrows the list without
+touching the generated file: 24,607 words at the floor, 16,412 above 2, and 2,797 above 2.5. Nothing
+at or below 1.6 is stored at all, so a lower setting could not be honoured — hence the floor.
+
+**Closed-class words are exempt** (`src/core/data/function-words.ts`, 212 entries). The survey scores
+them erratically — `is` 1.93, `a` 2.05, `to` 2.09 against `cat` and `water` at the 2.58 ceiling — so
+without the exemption a threshold above ~1.9 counts grammar instead of vocabulary: at 2.0 the first
+word flagged in ordinary prose was `is`, and at 2.2 the list was `is`, `when`, `not`, `a`, `so`. With
+the exemption, 2.0 flags `nevertheless` and `prose`, which is the kind of answer the number is for.
+
 
 ## Layout rules
 

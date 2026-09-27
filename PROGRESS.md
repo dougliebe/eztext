@@ -226,10 +226,21 @@ the top of the results pane when something in the preview is selected).
   know this word?” of a function word is odd) and why obscure entries run far below zero. A word above
   the threshold is one a typical reader knows, which is exactly what the tool should treat as familiar.
   The cost of the swap: the list is eight times the size of the Dale–Chall one, so ordinary prose now
-  scores ~5% unfamiliar instead of ~18% (CLEAR corpus mean 5.3%, sd 4.0pp after regenerating the
-  norms), and the bundled sample scores **0%** — the sample is ordinary prose, and every word in it is
-  one most readers know. Tests therefore drive the tool with a sentence built from genuine misses
+  scores ~5% unfamiliar instead of ~18% (CLEAR corpus mean 5.1%, sd 3.9pp after regenerating the
+  norms) **at the default floor**. Because that makes the metric quiet, the bar itself became a
+  setting: the tool's `Prevalence threshold` option (1.6…2.6) drives the metric, the heatmap,
+  the suggestions and the embedding service together, so the tool's count still equals `% unfamiliar`
+  at any setting (at 2.0: 16,412 words, and the sample's 0% becomes 1.2%). Each stored word keeps its
+  score (written as `<score> word word …`, 242 KB) and nothing at or below the floor is stored, so a
+  lower setting could not be honoured. Tests drive the tool with a sentence built from genuine misses
   (`The antediluvian brutalist edifice obfuscated the zygote.`) rather than the sample.
+- **Closed-class words are exempt from the threshold** (`core/data/function-words.ts`, 212 entries):
+  the prevalence survey asks whether you *know* a word, which is a strange question about `is` (1.93)
+  or `a` (2.05) while `cat` and `water` sit at the 2.58 ceiling. Without the exemption, raising the
+  threshold counts grammar rather than vocabulary — at 2.0 the first flagged word in ordinary prose
+  was `is`, and at 2.2 it was `is`, `when`, `not`, `a`, `so`; with it, 2.0 flags `nevertheless` and
+  `prose`. The exemption also caught `has`, `having`, `nor`, `onto` and `others`, which the survey
+  scores at or below the floor and which were being reported as unfamiliar words at the default.
 - **Chars/word** counts letters and digits only (punctuation/apostrophes excluded), matching what ARI
   and Coleman–Liau use as their divisor. Documented in the metric's tooltip.
 - **Stray remote commit (resolved)**: `origin/main` carried `c0b44a4` — a commit appending

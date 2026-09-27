@@ -726,6 +726,40 @@ if (embedHealth?.embeddings) {
   console.log('\n  (skipping the embedding check — start `npm run model` with the similarity endpoint)');
 }
 
+// --- 10. the prevalence threshold -----------------------------------------
+// The dial lives in the tool's settings, but it is not a tool-only setting: the
+// topbar metric is measured against the same list, so both must move together.
+await page.fill('.input__area', SAMPLE);
+await page.waitForTimeout(300);
+const beforeThreshold = await page.locator('.hl[data-tool="common-words"]').count();
+check('ordinary prose is left alone at the floor', beforeThreshold === 0, `${beforeThreshold} flagged`);
+
+await page.locator('.chip', { hasText: 'Common' }).locator('.chip__gear').click();
+await page.waitForSelector('#common-words-threshold');
+await page.fill('#common-words-threshold', '2');
+await page.waitForTimeout(400);
+
+const afterThreshold = await page.locator('.hl[data-tool="common-words"]').count();
+const metricWords = await page.evaluate(() => {
+  const cell = [...document.querySelectorAll('.metric')].find((node) =>
+    node.textContent?.includes('unfamiliar'),
+  );
+  return { value: cell?.querySelector('.metric__value')?.textContent ?? null, title: cell?.getAttribute('title') ?? '' };
+});
+check(
+  'raising the threshold flags words in ordinary prose',
+  beforeThreshold === 0 && afterThreshold > 0,
+  `${beforeThreshold} → ${afterThreshold} flagged`,
+);
+check(
+  'the topbar metric counts them the same way',
+  new RegExp(`${afterThreshold} of `).test(metricWords.title),
+  `${metricWords.value} — “${metricWords.title.split('\n')[0]}”`,
+);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(150);
+check('the settings popover closes again', (await page.locator('.popover').count()) === 0);
+
 await browser.close();
 console.log(`\n  ${failures === 0 ? 'all checks passed' : `${failures} CHECK(S) FAILED`}\n`);
 process.exitCode = failures === 0 ? 0 : 1;

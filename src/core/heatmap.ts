@@ -11,6 +11,7 @@
  * asked to see which sentences are longer *than the others here*, not which are
  * unusual for English. Corpus norms stay on the topbar's σ readouts.
  */
+import { COMMON_WORD_FLOOR } from './data/common-words';
 import { isFamiliarWord, POLYSYLLABLE_THRESHOLD } from './metrics';
 import { countSyllables, splitSentences, tokenizeWords } from './text';
 
@@ -107,7 +108,11 @@ function letters(token: string): number {
   return token.replace(/[^\p{L}\p{N}]/gu, '').length;
 }
 
-export function buildHeatmap(text: string, metric: HeatMetricId): HeatSpan[] {
+export function buildHeatmap(
+  text: string,
+  metric: HeatMetricId,
+  { threshold = COMMON_WORD_FLOOR }: { threshold?: number } = {},
+): HeatSpan[] {
   if (text.length === 0) return [];
 
   if (metric === 'wordsPerSentence') {
@@ -180,7 +185,7 @@ export function buildHeatmap(text: string, metric: HeatMetricId): HeatSpan[] {
 
   if (metric === 'unfamiliarShare') {
     return tokens
-      .filter((token) => !isFamiliarWord(token.lower))
+      .filter((token) => !isFamiliarWord(token.lower, threshold))
       .map((token) =>
         span(token, 1, 1, 'unfamiliar', `“${token.text}” is not a word most readers know.`),
       );

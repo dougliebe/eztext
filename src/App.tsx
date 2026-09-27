@@ -15,6 +15,7 @@ import type { SurprisalScores } from './core/surprisal';
 import { mergeSimilarity, type SimilaritySignal } from './core/similarity';
 import type { ToolSignals } from './core/types';
 import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
+import { COMMON_WORD_FLOOR, countCommonWords } from './core/data/common-words';
 import { usePersistentState } from './core/persistence';
 import { compactNumber, round } from './core/text';
 import type { ResolvedAnnotation, ToolOptionValue, ToolOptions } from './core/types';
@@ -128,6 +129,21 @@ export default function App() {
     void probeModel();
   }, [probeModel]);
 
+  // What counts as a common word: the Common words tool owns the setting (it is
+  // the tool that exists to explain `% unfamiliar`), and everything measured
+  // against the list — the metric, the heatmap, the embedding service — follows
+  // it, so the tool and the number can never disagree.
+  const wordThreshold = useMemo(
+    () =>
+      Math.max(
+        COMMON_WORD_FLOOR,
+        Number.isFinite(Number(options['common-words']?.threshold))
+          ? Number(options['common-words']?.threshold)
+          : COMMON_WORD_FLOOR,
+      ),
+    [options],
+  );
+
   // Semantic neighbours are an upgrade, not a mode: fetched in the background
   // whenever an enabled tool asks for them, merged by word so editing does not
   // throw away answers that are still true, and silently absent when the model
@@ -135,17 +151,20 @@ export default function App() {
   useEffect(() => {
     if (!neededSignals.has('similarity')) return;
     const controller = new AbortController();
-    void fetchSimilarity(deferredText, { signal: controller.signal }).then((result) => {
+    void fetchSimilarity(deferredText, { signal: controller.signal, threshold: wordThreshold }).then((result) => {
       if (result) setSemantic((previous) => mergeSimilarity(previous, result));
     });
     return () => controller.abort();
-  }, [neededSignals, deferredText]);
+  }, [neededSignals, deferredText, wordThreshold]);
 
-  const doc = useMemo(() => computeMetrics(deferredText), [deferredText]);
+  const doc = useMemo(
+    () => computeMetrics(deferredText, { threshold: wordThreshold }),
+    [deferredText, wordThreshold],
+  );
 
   const heatmap = useMemo(
-    () => (heatMetric ? buildHeatmap(deferredText, heatMetric) : []),
-    [deferredText, heatMetric],
+    () => (heatMetric ? buildHeatmap(deferredText, heatMetric, { threshold: wordThreshold }) : []),
+    [deferredText, heatMetric, wordThreshold],
   );
   const heatInfo = heatMetric ? HEAT_METRICS[heatMetric] : null;
 
@@ -299,7 +318,7 @@ export default function App() {
           <Metric
             label="% unfamiliar"
             value={`${round(doc.unfamiliarShare * 100, 1)}%`}
-            hint={`Share of words outside the ~24,600 words most US readers know, and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words).`}
+            hint={`Share of words outside the ${countCommonWords(wordThreshold).toLocaleString('en-US')} words most US readers know (prevalence > ${wordThreshold}), and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words).`}
             percent
             deviation={deviation(doc.unfamiliarShare, CLEAR_CORPUS.metrics.unfamiliarShare)}
             heatLabel="mark unfamiliar words"

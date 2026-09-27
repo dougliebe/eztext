@@ -1,4 +1,4 @@
-import { COMMON_WORDS_SIZE, COMMON_WORDS } from '../core/data/common-words';
+import { COMMON_WORD_FLOOR, COMMON_WORDS, countCommonWords, isCommonWord } from '../core/data/common-words';
 import { isFamiliarWord } from '../core/metrics';
 import { commonPrefixLength, similarity, type SemanticNeighbour } from '../core/similarity';
 import { splitSentences, tokenizeWords } from '../core/text';
@@ -106,18 +106,18 @@ function lettersOnly(word: string): string {
   return word.toLowerCase().replace(/[^a-z]/g, '');
 }
 
-/** Listed words bucketed by first letter, so a lookup never scans all 3,000. */
+/** Stored words bucketed by first letter, so a lookup never scans all 24,000. */
 let indexByInitial: Map<string, string[]> | null = null;
 
 function bucketFor(initial: string): string[] {
   if (!indexByInitial) {
     indexByInitial = new Map();
-    for (const entry of COMMON_WORDS) {
-      const key = lettersOnly(entry).charAt(0);
+    for (const word of COMMON_WORDS.keys()) {
+      const key = lettersOnly(word).charAt(0);
       if (!key) continue;
       const bucket = indexByInitial.get(key);
-      if (bucket) bucket.push(entry);
-      else indexByInitial.set(key, [entry]);
+      if (bucket) bucket.push(word);
+      else indexByInitial.set(key, [word]);
     }
   }
   return indexByInitial.get(initial) ?? [];
@@ -132,7 +132,7 @@ function bucketFor(initial: string): string[] {
  * strings alone cannot tell you the relation: "reshaping" does not contain
  * "shape" as a substring, yet that is exactly what the prefix strip found.
  */
-function familyForms(word: string): Map<string, Relation> {
+function familyForms(word: string, threshold: number = COMMON_WORD_FLOOR): Map<string, Relation> {
   const found = new Map<string, Relation>();
   let frontier = [{ word, kind: 'base form' as Relation }];
 
@@ -140,7 +140,7 @@ function familyForms(word: string): Map<string, Relation> {
     const next = new Map<string, Relation>();
 
     const visit = (stem: string, kind: Relation) => {
-      if (COMMON_WORDS.has(stem)) {
+      if (isCommonWord(stem, threshold)) {
         if (!found.has(stem)) found.set(stem, kind);
       }
       // Keep reducing even through a word that is itself on the list: "reshaping"
@@ -223,25 +223,27 @@ export function suggestFamiliarWords(
     minSimilarity = STRENGTH.balanced,
     semantic,
     semanticFloor = SEMANTIC_STRENGTH.balanced,
+    threshold = COMMON_WORD_FLOOR,
   }: {
     limit?: number;
     minSimilarity?: number;
     semantic?: SemanticNeighbour[];
     semanticFloor?: number;
+    threshold?: number;
   } = {},
 ): WordSuggestion[] {
   const capped = Math.max(0, Math.min(10, limit));
   const word = lettersOnly(rawWord);
   if (capped === 0 || word.length < 3) return [];
 
-  const key = `${word}|${capped}|${minSimilarity}|${semanticFloor}|${semantic ? semantic.length : 'none'}`;
+  const key = `${word}|${capped}|${minSimilarity}|${semanticFloor}|${threshold}|${semantic ? semantic.length : 'none'}`;
   const cached = suggestionCache.get(key);
   if (cached) return cached;
 
   const ranked: WordSuggestion[] = [];
   const seen = new Set<string>();
 
-  for (const [form, relation] of familyForms(word)) {
+  for (const [form, relation] of familyForms(word, threshold)) {
     if (seen.has(form)) continue;
     seen.add(form);
     ranked.push({ word: form, relation, similarity: round2(similarity(word, form)) });
@@ -249,10 +251,11 @@ export function suggestFamiliarWords(
 
   if (semantic) {
     // Never trust an external list blindly: the signal comes from another
-    // process, so anything it sends is re-checked against the list here.
+    // process, so anything it sends is re-checked against the list here —
+    // including the current threshold, which the server may not have seen.
     for (const neighbour of semantic) {
       if (neighbour.score < semanticFloor) continue;
-      if (seen.has(neighbour.word) || !COMMON_WORDS.has(neighbour.word)) continue;
+      if (seen.has(neighbour.word) || !isCommonWord(neighbour.word, threshold)) continue;
       seen.add(neighbour.word);
       ranked.push({ word: neighbour.word, relation: 'similar meaning', similarity: round2(neighbour.score) });
     }
@@ -262,6 +265,9 @@ export function suggestFamiliarWords(
     if (seen.has(candidate)) continue;
     if (candidate.length < MIN_SPELLING_LENGTH) continue;
     if (Math.abs(candidate.length - word.length) > LENGTH_WINDOW) continue;
+    // The bucket index holds every stored word; the threshold decides which of
+    // them may be suggested.
+    if (!isCommonWord(candidate, threshold)) continue;
 
     // Short words are where spelling resemblance misleads most ("verbs" and
     // "very" differ by two letters and mean nothing alike), so they have to
@@ -370,6 +376,19 @@ export const commonWordsTool: Tool = {
   requires: ['similarity'],
   options: [
     {
+      // Above the floor only: nothing below it is stored, so a lower setting
+      // could not be honoured anyway. Raising it is the point — a stricter
+      // "familiar" bar flags more words, for the topbar metric as well.
+      kind: 'number',
+      id: 'threshold',
+      label: 'Prevalence threshold',
+      default: COMMON_WORD_FLOOR,
+      min: COMMON_WORD_FLOOR,
+      max: 2.6,
+      step: 0.1,
+      hint: 'Words at or below this count as unfamiliar, for % unfamiliar too. The floor is every word the list has.',
+    },
+    {
       kind: 'number',
       id: 'suggestions',
       label: 'Suggestions per word',
@@ -413,6 +432,10 @@ export const commonWordsTool: Tool = {
 
   run({ text, options, signals }) {
     const limit = Number(options.suggestions ?? 4);
+    const threshold = Math.max(
+      COMMON_WORD_FLOOR,
+      Number.isFinite(Number(options.threshold)) ? Number(options.threshold) : COMMON_WORD_FLOOR,
+    );
     const strength = String(options.match ?? 'balanced');
     const minSimilarity = STRENGTH[strength] ?? STRENGTH.balanced;
     const semanticFloor = SEMANTIC_STRENGTH[strength] ?? SEMANTIC_STRENGTH.balanced;
@@ -432,7 +455,7 @@ export const commonWordsTool: Tool = {
 
     for (const token of tokens) {
       const word = token.lower;
-      if (isFamiliarWord(word)) continue;
+      if (isFamiliarWord(word, threshold)) continue;
 
       if (ignoreNames && sentenceStarts && !sentenceStarts.has(token.start) && isCapitalised(token.text)) {
         ignoredNames += 1;
@@ -444,6 +467,7 @@ export const commonWordsTool: Tool = {
         minSimilarity,
         semantic: neighbours?.[word],
         semanticFloor,
+        threshold,
       });
       flagged += 1;
       if (suggestions.length > 0) matched.add(word);
@@ -509,8 +533,8 @@ export const commonWordsTool: Tool = {
       {
         id: 'common-words.list',
         label: 'Reference list',
-        value: COMMON_WORDS_SIZE.toLocaleString('en-US'),
-        hint: 'words most readers know',
+        value: countCommonWords(threshold).toLocaleString('en-US'),
+        hint: `words above prevalence ${threshold}`,
       },
     ];
 

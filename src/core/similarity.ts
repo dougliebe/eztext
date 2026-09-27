@@ -96,14 +96,21 @@ export interface SemanticNeighbour {
 export interface SimilaritySignal {
   /** The embedding model that produced these, for the UI to name. */
   model: string;
+  /** The prevalence threshold the neighbours were ranked against. */
+  threshold: number;
   words: Record<string, SemanticNeighbour[]>;
 }
 
-/** Merge fresh neighbours into what we already know; new answers win. */
+/**
+ * Merge fresh neighbours into what we already know; new answers win.
+ *
+ * A different threshold means a different vocabulary — the neighbours it allows
+ * are a different set — so the old answers are dropped rather than mixed in.
+ */
 export function mergeSimilarity(
   previous: SimilaritySignal | null,
   next: SimilaritySignal,
 ): SimilaritySignal {
-  if (!previous) return next;
-  return { model: next.model, words: { ...previous.words, ...next.words } };
+  if (!previous || previous.threshold !== next.threshold) return next;
+  return { model: next.model, threshold: next.threshold, words: { ...previous.words, ...next.words } };
 }

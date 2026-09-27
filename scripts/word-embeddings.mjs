@@ -13,6 +13,9 @@
  *   · per document: one embedding per *new* flagged word (cached by word), then
  *     ~15 ms to rank 24,607 vectors. A keystroke usually adds no new words.
  *
+ * The candidate list is filtered by the prevalence threshold the app sends, so
+ * raising it narrows what may be suggested without touching the cached index.
+ *
  * Kept out of the browser on purpose: the weights would otherwise be a 34 MB
  * download in the app's cache, which is the same reasoning that put the
  * surprisal model in a process of its own.
@@ -87,9 +90,9 @@ function loadCore() {
   mkdirSync(CORE_DIR, { recursive: true });
   for (const { entry, out } of CORE_MODULES) {
     const outfile = resolve(CORE_DIR, out);
-    if (existsSync(outfile)) continue;
-    // One esbuild run per module with an explicit outfile: `--outdir` would
-    // mirror the source tree and put common-words under data/.
+    // Rebuilt on every start rather than trusted if present: these bundles embed
+    // the word list and the familiarity rule, and a stale one would quietly
+    // serve an old vocabulary (or miss a new export) instead of failing.
     execFileSync(process.execPath, [
       resolve(ROOT, 'node_modules/esbuild/bin/esbuild'),
       resolve(ROOT, entry),
@@ -105,6 +108,7 @@ function loadCore() {
     isFamiliarWord: require(resolve(CORE_DIR, 'metrics.cjs')).isFamiliarWord,
     tokenizeWords: require(resolve(CORE_DIR, 'text.cjs')).tokenizeWords,
     COMMON_WORDS: require(resolve(CORE_DIR, 'common-words.cjs')).COMMON_WORDS,
+    COMMON_WORD_FLOOR: require(resolve(CORE_DIR, 'common-words.cjs')).COMMON_WORD_FLOOR,
   };
   return core;
 }
@@ -164,7 +168,8 @@ let index = null;
 async function loadIndex() {
   if (index) return index;
   const { COMMON_WORDS } = loadCore();
-  const words = [...COMMON_WORDS].sort();
+  // Keys, not entries: the module carries word → prevalence.
+  const words = [...COMMON_WORDS.keys()].sort();
   const vectorFile = resolve(ROOT, '.models', `word-vectors-${MODEL.replace(/[^\w.]+/g, '-')}-${words.length}.json`);
 
   if (existsSync(vectorFile)) {
@@ -224,9 +229,13 @@ async function embedWord(word) {
   return vector;
 }
 
-function rank(vector, { words, dims, vectors }, k) {
+function rank(vector, { words, dims, vectors }, k, threshold) {
   const scored = [];
+  const prevalence = loadCore().COMMON_WORDS;
   for (let i = 0; i < words.length; i += 1) {
+    // The index holds every stored word; the threshold decides which are allowed
+    // to be suggested, exactly as the tool does when it ranks its own tiers.
+    if ((prevalence.get(words[i]) ?? 0) <= threshold) continue;
     let dot = 0;
     const offset = i * dims;
     for (let d = 0; d < dims; d += 1) dot += vector[d] * vectors[offset + d];
@@ -242,16 +251,17 @@ function rank(vector, { words, dims, vectors }, k) {
  * The set of words to look up is decided here, not by the caller, so the app
  * only has to say "here is the document".
  */
-export async function similarityForText(text, { k = TOP_K } = {}) {
+export async function similarityForText(text, { k = TOP_K, threshold } = {}) {
   const started = performance.now();
-  const { isFamiliarWord, tokenizeWords } = loadCore();
+  const { isFamiliarWord, tokenizeWords, COMMON_WORD_FLOOR } = loadCore();
+  const floor = Number.isFinite(threshold) ? Math.max(COMMON_WORD_FLOOR, threshold) : COMMON_WORD_FLOOR;
   const idx = await loadIndex();
 
   const candidates = [];
   const seen = new Set();
   for (const token of tokenizeWords(text)) {
     const word = token.lower.replace(/[^a-z'-]/g, '');
-    if (!word || seen.has(word) || isFamiliarWord(word)) continue;
+    if (!word || seen.has(word) || isFamiliarWord(word, floor)) continue;
     seen.add(word);
     candidates.push(word);
   }
@@ -269,11 +279,12 @@ export async function similarityForText(text, { k = TOP_K } = {}) {
       continue;
     }
     if (!queryCache.has(word)) embedded += 1;
-    words[word] = rank(await embedWord(word), idx, k);
+    words[word] = rank(await embedWord(word), idx, k, floor);
   }
 
   return {
     model: MODEL,
+    threshold: floor,
     dims: idx.dims,
     listSize: idx.words.length,
     candidates: candidates.length,

@@ -9,8 +9,7 @@
  *   2. every resolved annotation appears in at least one segment;
  *   3. layers inside a segment are ordered widest → narrowest.
  */
-import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
-import { scoreWindow, summarise, surprisalScale } from '../core/surprisal';
+import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';import { scoreWindow, summarise, surprisalScale } from '../core/surprisal';
 import { surprisalTool } from '../tools/surprisal.tool';
 import { CLEAR_SURPRISAL_NORMS } from '../core/data/surprisal-norms';
 import { runAnalysis } from '../core/engine';
@@ -30,7 +29,8 @@ import {
 } from '../core/metrics';
 import { contrastRatio, maxMixForContrast, mixHex, parseHex, relativeLuminance } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
-import { COMMON_WORDS } from '../core/data/common-words';
+import { COMMON_WORD_FLOOR, COMMON_WORDS, countCommonWords, prevalenceOf } from '../core/data/common-words';
+import { FUNCTION_WORDS } from '../core/data/function-words';
 import { commonWordsTool, suggestFamiliarWords, type WordSuggestion } from '../tools/common-words.tool';
 import type { SimilaritySignal } from '../core/similarity';
 import type { AnnotationDraft } from '../core/types';
@@ -732,6 +732,62 @@ function main(): void {
     `${(sampleRun.annotations ?? []).length} flagged, metric says ${sampleMetrics.unfamiliarWords} of ${sampleMetrics.words} words`,
   );
 
+  console.log('\n  prevalence threshold:');
+  const prevalences = [...COMMON_WORDS.values()];
+  check(
+    'nothing at or below the floor is stored',
+    prevalences.length > 20_000 && prevalences.every((prevalence) => prevalence > COMMON_WORD_FLOOR),
+    `${prevalences.length.toLocaleString('en-US')} words, lowest ${Math.min(...prevalences)}`,
+  );
+  check(
+    'a higher threshold keeps fewer words',
+    countCommonWords(COMMON_WORD_FLOOR) === COMMON_WORDS.size &&
+      countCommonWords(2) < countCommonWords(COMMON_WORD_FLOOR) &&
+      countCommonWords(2.5) < countCommonWords(2),
+    `${countCommonWords(COMMON_WORD_FLOOR).toLocaleString('en-US')} at the floor, ${countCommonWords(2).toLocaleString('en-US')} above 2, ${countCommonWords(2.5).toLocaleString('en-US')} above 2.5`,
+  );
+  // "prose" scores 1.72: known to most readers, but not known *very* well.
+  check(
+    'the threshold decides what is familiar',
+    isFamiliarWord('prose', COMMON_WORD_FLOOR) && !isFamiliarWord('prose', 2) &&
+      isFamiliarWord('prose') === isFamiliarWord('prose', COMMON_WORD_FLOOR),
+    `prose: familiar at ${COMMON_WORD_FLOOR}, unfamiliar above 2 (prevalence ${prevalenceOf('prose')})`,
+  );
+  // Closed-class words are familiar at any setting: the survey scores them
+  // erratically (`is` 1.93 against `cat` at the 2.58 ceiling), so without this a
+  // raised threshold counts grammar instead of vocabulary.
+  check(
+    'closed-class words never become unfamiliar',
+    ['is', 'the', 'and', 'was', 'has', 'not'].every(
+      (word) => isFamiliarWord(word, 2.5) && FUNCTION_WORDS.has(word),
+    ),
+    ['is', 'the', 'and', 'was', 'has', 'not']
+      .map((word) => `${word}:${isFamiliarWord(word, 2.5) ? 'familiar' : 'flagged'}`)
+      .join(' '),
+  );
+  const raisedMetrics = computeMetrics(SAMPLE_TEXT, { threshold: 2 });
+  const raisedRun = commonWordsTool.run({ text: SAMPLE_TEXT, options: { threshold: 2 } });
+  check(
+    'raising it flags words in ordinary prose',
+    raisedMetrics.unfamiliarWords > 0 && (raisedRun.annotations ?? []).length === raisedMetrics.unfamiliarWords,
+    `${(raisedRun.annotations ?? []).length} flagged vs metric ${raisedMetrics.unfamiliarWords} above 2`,
+  );
+  check(
+    'the heatmap follows the threshold',
+    buildHeatmap(SAMPLE_TEXT, 'unfamiliarShare', { threshold: 2 }).length === raisedMetrics.unfamiliarWords,
+    `${buildHeatmap(SAMPLE_TEXT, 'unfamiliarShare', { threshold: 2 }).length} spans`,
+  );
+  check(
+    'suggestions never come from below the threshold',
+    suggestFamiliarWords('brutalist', { limit: 6, threshold: 2.2 }).every(
+      (suggestion) => (prevalenceOf(suggestion.word) ?? 0) > 2.2,
+    ) &&
+      suggestFamiliarWords('brutalist', { limit: 6, threshold: COMMON_WORD_FLOOR }).every(
+        (suggestion) => (prevalenceOf(suggestion.word) ?? 0) > COMMON_WORD_FLOOR,
+      ),
+    `at 2.2: ${suggestFamiliarWords('brutalist', { limit: 6, threshold: 2.2 }).map((s) => s.word).join(', ') || '(nothing)'}`,
+  );
+
   // The tool exists to explain the topbar's % unfamiliar, so the two counts must
   // agree exactly.
   const metricsForText = computeMetrics(hardText);
@@ -907,6 +963,7 @@ function main(): void {
   console.log('\n  meaning suggestions (stand-in signal):');
   const fakeSimilarity: SimilaritySignal = {
     model: 'test/bge-stand-in',
+    threshold: COMMON_WORD_FLOOR,
     words: {
       brutalist: [
         { word: 'cruel', score: 0.8 },

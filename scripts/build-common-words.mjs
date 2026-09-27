@@ -69,21 +69,33 @@ for (const line of lines.slice(1)) {
   if (kept.get(word) === undefined || kept.get(word) < prevalence) kept.set(word, prevalence);
 }
 
-const words = [...kept.keys()].sort();
 
-/** Wrap the list so the generated file stays reviewable. */
-function block(list) {
+/**
+ * Wrap the words so the generated file stays reviewable, prefixed on every line
+ * with the prevalence they share.
+ */
+function blocks(scored) {
   const lines = [];
-  let current = '';
-  for (const word of list) {
-    if (current.length + word.length + 1 > 110) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = current ? `${current} ${word}` : word;
-    }
+  const byScore = new Map();
+  for (const [word, prevalence] of scored) {
+    const group = byScore.get(prevalence);
+    if (group) group.push(word);
+    else byScore.set(prevalence, [word]);
   }
-  if (current) lines.push(current);
+
+  // Hardest-first: the file then reads as the vocabulary relaxing towards the floor.
+  for (const prevalence of [...byScore.keys()].sort((a, b) => b - a)) {
+    let current = '';
+    for (const word of byScore.get(prevalence).sort()) {
+      if (current.length + word.length + 1 > 100) {
+        lines.push(current);
+        current = '';
+      }
+      current = current ? `${current} ${word}` : `${prevalence} ${word}`;
+    }
+    if (current) lines.push(current);
+  }
+
   return lines.join('\n');
 }
 
@@ -91,11 +103,16 @@ const content = `/**
  * The words a typical US reader knows — generated, do not edit by hand.
  *
  * Source: ${basename(source)} (\`${header[0]}, ${header[1]}\`), keeping
- * ${header[1]} > ${THRESHOLD}: ${words.length.toLocaleString('en-US')} words from
+ * ${header[1]} > ${THRESHOLD}: ${kept.size.toLocaleString('en-US')} words from
  * ${dataRows.toLocaleString('en-US')} rows${skipped > 0 ? ` (${skipped} unreadable rows skipped)` : ''}.
  *
  * Regenerate with:
  *   npm run words:common -- "${basename(source)}"
+ *
+ * Each word keeps the prevalence it scored, written as \`<score> word word …\`,
+ * so "familiar" can be a threshold the reader raises rather than a fixed list.
+ * Words at or below the floor are not stored: nothing below it can ever be
+ * familiar.
  *
  * Prevalence is knowledge rather than text frequency, so this is "would a reader
  * recognise this word", not "how often does it appear". The source carries
@@ -103,16 +120,52 @@ const content = `/**
  * is why \`isFamiliarWord\` still strips inflection before looking a word up.
  */
 const RAW = \`
-${block(words)}
+${blocks(kept)}
 \`;
 
-export const COMMON_WORDS: ReadonlySet<string> = new Set(RAW.split(/\\s+/).filter(Boolean));
+/** Nothing at or below this is ever treated as familiar. */
+export const COMMON_WORD_FLOOR = ${THRESHOLD};
+
+function parse(raw: string): Map<string, number> {
+  const words = new Map<string, number>();
+  for (const line of raw.split('\\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const [score, ...entries] = trimmed.split(/\\s+/);
+    for (const word of entries) words.set(word, Number(score));
+  }
+  return words;
+}
+
+/** Word → prevalence, for every word above {@link COMMON_WORD_FLOOR}. */
+export const COMMON_WORDS: ReadonlyMap<string, number> = parse(RAW);
 
 export const COMMON_WORDS_SIZE = COMMON_WORDS.size;
+
+/** The prevalence a word scored, or \`undefined\` when it is not stored. */
+export function prevalenceOf(word: string): number | undefined {
+  return COMMON_WORDS.get(word);
+}
+
+/**
+ * Is this word above the threshold? The default is the floor, so a caller that
+ * does not care about tuning sees every word the source carries.
+ */
+export function isCommonWord(word: string, threshold: number = COMMON_WORD_FLOOR): boolean {
+  const prevalence = COMMON_WORDS.get(word);
+  return prevalence !== undefined && prevalence > threshold;
+}
+
+/** How many words sit above a threshold — so the UI can say so. */
+export function countCommonWords(threshold: number = COMMON_WORD_FLOOR): number {
+  let count = 0;
+  for (const prevalence of COMMON_WORDS.values()) if (prevalence > threshold) count += 1;
+  return count;
+}
 `;
 
 writeFileSync(OUT, content);
 console.log(
-  `common words: kept ${words.length.toLocaleString('en-US')} of ${dataRows.toLocaleString('en-US')} rows ` +
+  `common words: kept ${kept.size.toLocaleString('en-US')} of ${dataRows.toLocaleString('en-US')} rows ` +
     `(${header[1]} > ${THRESHOLD}${skipped > 0 ? `, ${skipped} skipped` : ''}) → ${OUT.replace(`${ROOT}\\`, '')}`,
 );
