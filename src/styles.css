@@ -1395,13 +1395,32 @@ button {
 }
 
 .stat__value {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
   font-size: 16px;
   font-weight: 700;
   line-height: 1.2;
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/*
+ * Percentile beside a stat — the topbar's chip box, one size up because the stat
+ * card is larger. The font colour comes from `deviationColor(z)` inline.
+ */
+.stat__chip {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 3px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-0);
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat__hint {

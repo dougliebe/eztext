@@ -433,12 +433,23 @@ check(
 // --- 8. the surprisal model, if it is running -----------------------------
 // Skipped when the local model process is absent, so the suite still runs
 // anywhere. Start it with `npm run model` to include these.
+//
+// The probe checks the content type on purpose: a proxy pointing at the wrong
+// server gets *index.html with status 200*, which a naive `response.ok` check
+// would treat as success and then fail on with a confusing JSON parse error.
 const health = await fetch(`${baseUrl}/api/model/health`)
-  .then((response) => (response.ok ? response.json() : null))
-  .catch(() => null);
+  .then(async (response) => {
+    const type = response.headers.get('content-type') ?? '';
+    if (!response.ok || !type.includes('json')) {
+      return { error: `got ${response.status} ${type.split(';')[0] || 'with no content-type'}` };
+    }
+    return response.json();
+  })
+  .catch((error) => ({ error: error.message }));
 
 if (!health?.ready) {
-  console.log(`\n  (skipping ${7} model checks — start \`npm run model\` to include them)`);
+  console.log(`\n  (skipping the model checks — ${health?.error ?? 'the model is not ready'})`);
+  console.log('  start it with `npm run model`; if it is already running, the dev-server proxy is not reaching it');
 } else {
   await page.fill('.input__area', '');
   await page.fill(
@@ -517,6 +528,30 @@ if (!health?.ready) {
   check(
     'the surprisal panel reports model statistics',
     (await page.locator('.tool-panel', { hasText: 'Surprisal' }).locator('.stat').count()) >= 6,
+  );
+
+  // The three model figures carry a percentile against the CLEAR corpus.
+  const statChips = await page.evaluate(() =>
+    [...document.querySelectorAll('.tool-panel .stat__chip')].map((node) => ({
+      text: node.textContent ?? '',
+      title: node.getAttribute('title') ?? '',
+      colour: getComputedStyle(node).color,
+    })),
+  );
+  check(
+    'the model stats show corpus percentiles',
+    statChips.length === 3 && statChips.every((chip) => /^(<1st|>99th|\d+(st|nd|rd|th))$/.test(chip.text)),
+    statChips.map((chip) => chip.text).join('  '),
+  );
+  check(
+    'each chip names its population in the tooltip',
+    statChips.every((chip) => /CLEAR/.test(chip.title) && /\d+ excerpts|n=/.test(chip.title)),
+    statChips[0]?.title.replace(/\n/g, ' | '),
+  );
+  check(
+    'chip colour tracks the deviation',
+    statChips.every((chip) => /^rgb\(/.test(chip.colour)),
+    statChips.map((chip) => chip.colour).join(' '),
   );
 
   // Editing must invalidate the scores rather than shade stale ranges.

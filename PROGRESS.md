@@ -105,6 +105,28 @@
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
   changed defaults reach existing sessions.
+- **Surprisal norms** (`npm run model:norms` → `core/data/surprisal-norms.ts`): all 4,724 CLEAR excerpts
+  scored with the same model, so the surprisal panel reports a percentile beside bits/token, bits/word and
+  perplexity. 35 minutes, resumable via a JSONL cache, and the module is only written from a complete set.
+  - `bits / token 5.1973 ± 0.6529`, `bits / word 6.4551 ± 0.9276`, `perplexity 40.5430 ± 18.5139`.
+  - Guards on the model id: another model's scores get no chip, since the norms describe GPT-2.
+  - The generator measures the normal-CDF drift per figure — perplexity 7.0 pp worst case (heavily skewed:
+    mean 40.5 over median 37.4), bits/word 1.4 pp, bits/token 2.2 pp.
+  - The sample document lands at the 47th percentile for bits/token and the 91st for characters per word:
+    long words, ordinary predictability.
+- `Stat.comparison` (percentile + z + population description) is the general form: the tool computes all
+  three because it knows the population, and `StatGrid` only renders — no CDF inversion in the view.
+- Shared `scripts/lib/`: the CLEAR xlsx reader and the model runner, so the two norms generators and the
+  model server each have one implementation to depend on.
+- Found a port collision worth remembering: a second dev server started elsewhere on this machine
+  auto-incremented onto **5174**, and on Windows its specific `[::1]` bind won over the model server's
+  wildcard one — so the Vite proxy resolved `localhost:5174` to that dev server, which answered `/health`
+  with index.html and status 200. The app then failed with a JSON parse error rather than a connection
+  error, and ui-check silently skipped the model checks. Fixed by binding the model to `127.0.0.1` and
+  targeting `127.0.0.1` in the proxy, plus `strictPort: true` so a stray dev server fails loudly instead of
+  drifting onto the model's port.
+- The ui-check probe now checks the *content type* before trusting a 200, and reports why it skipped.
+
 - **Surprisal shading is a paper → red mix**, opaque rather than alpha: the rendered colour is exactly the
   colour that was checked, and opaque spans can be composited later with multiply/additive blends. The
   ceiling is derived: `maxMixForContrast()` binary-searches the largest mix keeping the preview ink

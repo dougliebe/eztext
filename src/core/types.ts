@@ -76,6 +76,19 @@ export interface Annotation extends TextRange {
 
 export type Tone = 'neutral' | 'accent' | 'good' | 'warn' | 'bad' | 'muted';
 
+/**
+ * Where a value sits against a reference population, for a percentile chip.
+ *
+ * The tool computes all three because it is the side that knows the population —
+ * the view only renders, and never has to invert a CDF to colour a chip.
+ */
+export interface StatComparison {
+  percentile: number;
+  z: number;
+  /** Describes the population, e.g. `CLEAR corpus: 5.14 ± 0.61 (n=4,724)`. */
+  description: string;
+}
+
 /** A single computed number/label shown in the stats views. */
 export interface Stat {
   id: string;
@@ -84,6 +97,8 @@ export interface Stat {
   /** Optional secondary text, e.g. a formula or target range. */
   hint?: string;
   tone?: Tone;
+  /** Reference-population comparison, rendered as a chip beside the value. */
+  comparison?: StatComparison;
 }
 
 /**

@@ -12,7 +12,8 @@
     "smoke": "node scripts/smoke.mjs",
     "ui-check": "node scripts/ui-check.mjs",
     "corpus:norms": "node scripts/build-corpus-norms.mjs",
-    "model": "node scripts/model-server.mjs"
+    "model": "node scripts/model-server.mjs",
+    "model:norms": "node scripts/build-surprisal-norms.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

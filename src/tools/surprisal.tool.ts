@@ -1,8 +1,28 @@
 import { maxMixForContrast, mixHex } from '../core/color';
+import { CLEAR_SURPRISAL_NORMS, type SurprisalNorm } from '../core/data/surprisal-norms';
+import { describeNorm, percentileFromZ, zScore } from '../core/metrics';
 import { surprisalScale, type ScoredWord } from '../core/surprisal';
-import type { AnnotationDraft, Stat, Tool } from '../core/types';
+import type { AnnotationDraft, Stat, StatComparison, Tool } from '../core/types';
 
 const round = (value: number, digits: number) => Number(value.toFixed(digits));
+
+/**
+ * Where a value sits against the same model on the CLEAR corpus.
+ *
+ * Guards on the model id: these norms describe GPT-2's expectations, so comparing
+ * a document scored by some other model against them would be meaningless.
+ * Returns undefined (no chip) rather than a wrong number.
+ */
+function againstCorpus(value: number, norm: SurprisalNorm, model: string, label: string): StatComparison | undefined {
+  if (model !== CLEAR_SURPRISAL_NORMS.model) return undefined;
+  const z = zScore(value, norm);
+  if (z === null) return undefined;
+  return {
+    percentile: percentileFromZ(z),
+    z,
+    description: `${label}: ${CLEAR_SURPRISAL_NORMS.model} on CLEAR, ${describeNorm(norm, { n: CLEAR_SURPRISAL_NORMS.n })}`,
+  };
+}
 
 /**
  * Surprisal is shaded with **opaque mixes from the page to red** — not alpha.
@@ -134,14 +154,26 @@ export const surprisalTool: Tool = {
 
     const top = worst.slice(0, 6);
     const stats: Stat[] = [
-      { id: 'surprisal.mean', label: 'Mean bits / token', value: round(scores.meanBits, 2), tone: 'accent' },
+      {
+        id: 'surprisal.mean',
+        label: 'Mean bits / token',
+        value: round(scores.meanBits, 2),
+        tone: 'accent',
+        comparison: againstCorpus(scores.meanBits, CLEAR_SURPRISAL_NORMS.metrics.bitsPerToken, scores.model, 'bits per token'),
+      },
       {
         id: 'surprisal.perplexity',
         label: 'Perplexity',
         value: round(2 ** scores.meanBits, 1),
         hint: `at ${scores.tokens.length} tokens`,
+        comparison: againstCorpus(2 ** scores.meanBits, CLEAR_SURPRISAL_NORMS.metrics.perplexity, scores.model, 'perplexity'),
       },
-      { id: 'surprisal.meanWord', label: 'Mean bits / word', value: round(scores.meanWordBits, 2) },
+      {
+        id: 'surprisal.meanWord',
+        label: 'Mean bits / word',
+        value: round(scores.meanWordBits, 2),
+        comparison: againstCorpus(scores.meanWordBits, CLEAR_SURPRISAL_NORMS.metrics.bitsPerWord, scores.model, 'bits per word'),
+      },
       {
         id: 'surprisal.max',
         label: 'Most surprising',

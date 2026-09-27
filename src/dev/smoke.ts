@@ -12,6 +12,7 @@
 import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
 import { scoreWindow, summarise, surprisalScale } from '../core/surprisal';
 import { surprisalTool } from '../tools/surprisal.tool';
+import { CLEAR_SURPRISAL_NORMS } from '../core/data/surprisal-norms';
 import { runAnalysis } from '../core/engine';
 import {
   computeMetrics,
@@ -517,7 +518,11 @@ function main(): void {
     `${staleResult.stats?.[0].value} / ${staleResult.stats?.[0].hint}`,
   );
 
-  const scored = runTool({ surprisal: scoredAll, surprisalText: toolText });
+  // The corpus comparison is guarded on the model id, so the synthetic scores
+  // have to claim the same model to exercise it. The guard itself is tested
+  // below, with a mismatched id.
+  const matchingModel = { ...scoredAll, model: CLEAR_SURPRISAL_NORMS.model };
+  const scored = runTool({ surprisal: matchingModel, surprisalText: toolText });
   const annotations = scored.annotations ?? [];
   check(
     'a scored document yields one shaded annotation per word',
@@ -590,6 +595,70 @@ function main(): void {
     (scored.stats ?? []).some((stat) => stat.id === 'surprisal.mean') &&
       (scored.stats ?? []).some((stat) => stat.id === 'surprisal.offenders' && String(stat.value).includes('C')),
     (scored.stats ?? []).map((stat) => `${stat.label}=${stat.value}`).join('  '),
+  );
+
+  // The three model figures carry a percentile against the CLEAR corpus, so a
+  // document can be placed against real prose.
+  const compared = (scored.stats ?? []).filter((stat) => stat.comparison);
+  check(
+    'the model stats carry a corpus percentile',
+    compared.length === 3 &&
+      compared.every(
+        (stat) =>
+          stat.comparison!.percentile > 0 &&
+          stat.comparison!.percentile < 100 &&
+          Number.isFinite(stat.comparison!.z) &&
+          stat.comparison!.description.includes('CLEAR'),
+      ),
+    compared
+      .map((stat) => `${stat.label}: ${formatPercentile(stat.comparison!.percentile)} (z ${formatZ(stat.comparison!.z)})`)
+      .join('  '),
+  );
+  check(
+    'the comparison names the model and the population',
+    compared[0].comparison!.description.includes(CLEAR_SURPRISAL_NORMS.model) &&
+      compared[0].comparison!.description.includes(`n=${CLEAR_SURPRISAL_NORMS.n.toLocaleString('en-US')}`),
+    compared[0].comparison!.description,
+  );
+  check(
+    'percentile and z agree with the corpus figures',
+    (() => {
+      const stat = (scored.stats ?? []).find((entry) => entry.id === 'surprisal.mean')!;
+      const norm = CLEAR_SURPRISAL_NORMS.metrics.bitsPerToken;
+      const expectedZ = (scoredAll.meanBits - norm.mean) / norm.sd;
+      return Math.abs(stat.comparison!.z - expectedZ) < 1e-9;
+    })(),
+  );
+
+  // Guard: the norms describe one model, so a different one gets no chip.
+  const otherModel = surprisalTool.run({
+    text: toolText,
+    options: {},
+    signals: { surprisal: { ...scoredAll, model: 'someone/else' }, surprisalText: toolText },
+  });
+  check(
+    'scores from another model are not compared against these norms',
+    (otherModel.stats ?? []).every((stat) => stat.comparison === undefined),
+    `${(otherModel.stats ?? []).filter((stat) => stat.comparison).length} chips shown for someone/else`,
+  );
+  check(
+    'the shipped norms match the model the app asks for',
+    CLEAR_SURPRISAL_NORMS.n > 4000 &&
+      CLEAR_SURPRISAL_NORMS.metrics.bitsPerToken.sd > 0 &&
+      CLEAR_SURPRISAL_NORMS.metrics.bitsPerToken.mean > 3 &&
+      CLEAR_SURPRISAL_NORMS.metrics.bitsPerToken.mean < 8 &&
+      CLEAR_SURPRISAL_NORMS.metrics.perplexity.mean > 10 &&
+      CLEAR_SURPRISAL_NORMS.metrics.perplexity.mean < 200 &&
+      CLEAR_SURPRISAL_NORMS.metrics.bitsPerWord.mean > 3 &&
+      CLEAR_SURPRISAL_NORMS.metrics.bitsPerWord.mean < 10,
+    `${CLEAR_SURPRISAL_NORMS.n} excerpts: ${CLEAR_SURPRISAL_NORMS.metrics.bitsPerToken.mean.toFixed(2)} bits/token, ` +
+      `perplexity ${CLEAR_SURPRISAL_NORMS.metrics.perplexity.mean.toFixed(1)}, ` +
+      `${CLEAR_SURPRISAL_NORMS.metrics.bitsPerWord.mean.toFixed(2)} bits/word`,
+  );
+  check(
+    'the norms record which model produced them',
+    CLEAR_SURPRISAL_NORMS.model.length > 0 && CLEAR_SURPRISAL_NORMS.modelFile.length > 0,
+    `${CLEAR_SURPRISAL_NORMS.model} / ${CLEAR_SURPRISAL_NORMS.modelFile}`,
   );
 
   // Only surprising words when asked.

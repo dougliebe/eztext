@@ -314,8 +314,8 @@ if (inline !== undefined || file !== undefined) {
 
 if (!existsSync(env.cacheDir)) mkdirSync(env.cacheDir, { recursive: true });
 
-server.listen(PORT, () => {
-  console.log(`surprisal model server on http://localhost:${PORT}  (${MODEL})`);
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`surprisal model server on http://127.0.0.1:${PORT}  (${MODEL})`);
   console.log('first run downloads the weights into .models/ — later runs are offline');
   // Warm up in the background so the first request is not the one that pays.
   loadModel().catch((error) => console.error('model failed to load:', error));

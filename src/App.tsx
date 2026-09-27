@@ -472,7 +472,7 @@ function Metric({
   const title = [
     hint,
     deviation && z !== null && percentile !== null
-      ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, percent)} → z-score ${formatZ(z)}, ${percentile >= 50 ? 'harder' : 'easier'} than the average excerpt (${formatPercentile(percentile)} percentile by the normal approximation; the corpus is skewed, so treat it as approximate).`
+      ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, { percent, n: CLEAR_CORPUS.n })} → z-score ${formatZ(z)}, ${percentile >= 50 ? 'harder' : 'easier'} than the average excerpt (${formatPercentile(percentile)} percentile by the normal approximation; the corpus is skewed, so treat it as approximate).`
       : null,
     onToggle ? `${active ? 'Shading the preview. Click to stop' : `Click to ${heatLabel ?? 'shade the preview'}`}.` : null,
   ]

@@ -11,7 +11,7 @@
  */
 import { mixHex } from './color';
 import { DALE_CHALL_WORDS } from './data/dale-chall';
-import { CLEAR_CORPUS, type MetricNorm } from './data/corpus-norms';
+import type { MetricNorm } from './data/corpus-norms';
 import { countSyllables, splitParagraphs, splitSentences, tokenizeWords } from './text';
 
 /** Words with at least this many syllables are "polysyllabic". */
@@ -136,11 +136,11 @@ export function deviationColor(z: number): string {
     : mixHex(PERCENTILE_WARM, PERCENTILE_HOT, (t - WARM_HANDOVER) / (1 - WARM_HANDOVER));
 }
 
-/** Corpus context line for a metric tooltip, e.g. `21.3 ± 9.2 (n=4,724)`. */
-export function describeNorm(norm: MetricNorm, percent = false): string {
+/** Corpus context line for a metric tooltip, e.g. `21.28 ± 9.23 (n=4,724)`. */
+export function describeNorm(norm: MetricNorm, options: { n: number; percent?: boolean }): string {
   const format = (value: number) =>
-    percent ? `${(value * 100).toFixed(1)}%` : value.toFixed(2);
-  return `${format(norm.mean)} \u00B1 ${format(norm.sd)} (n=${CLEAR_CORPUS.n.toLocaleString('en-US')})`;
+    options.percent ? `${(value * 100).toFixed(1)}%` : value.toFixed(2);
+  return `${format(norm.mean)} \u00B1 ${format(norm.sd)} (n=${options.n.toLocaleString('en-US')})`;
 }
 
 export interface DocumentMetrics {

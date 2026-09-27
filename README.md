@@ -32,6 +32,7 @@ npm run dev        # http://localhost:5173
 | `npm run ui-check` | Drives your installed Chrome/Edge (via `playwright-core`, no browser download) against a running dev server to verify divider dragging, pane sizing, topbar height and that the page is actually styled. Needs `npm run dev` in another shell. |
 | `npm run corpus:norms` | Downloads the CLEAR corpus (if absent) and regenerates `src/core/data/corpus-norms.ts`. Needs no dependencies. |
 | `npm run model` | Starts the local surprisal model on `:5174` (proxied as `/api/model`). Add `-- --score "text"` or `-- --file draft.txt` to score from the terminal. |
+| `npm run model:norms` | Scores every CLEAR excerpt with the local model (~35 min, resumable) and regenerates `src/core/data/surprisal-norms.ts`. `-- --limit 50` samples; `-- --fresh` starts over. |
 
 ## The mental model
 
@@ -167,14 +168,15 @@ src/
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
     persistence.ts  namespaced localStorage + usePersistentState
     color.ts        hex → rgba helpers for layer tints
-    data/           vendored data: dale-chall.ts, corpus-norms.ts (generated)
+    data/           vendored data: dale-chall.ts, corpus-norms.ts, surprisal-norms.ts (generated)
   components/
     Toolbar, ToolOptionsEditor, InputPane, HighlightView, HeatmapView, CoverageStrip,
     ResultsPane, ToolPanel, StatGrid, JsonView, Splitter
   tools/            one file per extension + index.ts registry
   dev/              headless smoke test and render check
   App.tsx           state, layout, topbar metrics, selection/hover wiring
-scripts/            smoke + ui-check runners, corpus norms generator, local model server
+scripts/            smoke + ui-check runners, corpus and surprisal norms generators, local model server
+  lib/              shared: CLEAR xlsx reader, model runner
 ```
 
 ## Surprisal (local language model)
@@ -204,6 +206,40 @@ Both come from the same logits, so the second is free. Worked examples from the 
   1.28  " the"             —
   0.00  "The"             —          (nothing precedes it)
 ```
+
+### Norms: where does a document sit?
+
+`npm run model:norms` scores every CLEAR excerpt with the same model and stores the mean and standard
+deviation of three figures, so the surprisal panel can report a percentile beside each of them — the same
+comparison the topbar makes for the formula metrics. Regenerating takes ~35 minutes (4,724 excerpts at
+~0.38 s each), is resumable, and only writes the module from a complete set.
+
+```
+4724 excerpts, 215.4 ± 25.3 tokens each
+                              mean        sd      p10     p50     p90
+bits / token                5.1973    0.6529     4.34    5.22    6.02
+bits / word                 6.4551    0.9276     5.29    6.43    7.62
+perplexity                 40.5430   18.5139    20.30   37.40   64.69
+```
+
+```
+MEAN BITS / TOKEN   PERPLEXITY        MEAN BITS / WORD
+5.14  47th          35.3  39th        6.1  35th
+```
+
+Two caveats, both measured rather than assumed:
+
+- **The norms are model-specific.** They describe GPT-2's expectations, so the tool checks the model id and
+  shows no chip at all when a document was scored by something else (`MODEL=` gpt2-medium, say). A
+  comparison against the wrong model would be worse than no comparison.
+- **Percentiles assume normality, and these distributions are skewed** — perplexity especially, where the
+  mean (40.5) sits well above the median (37.4). The generator measures the drift the same way the metric
+  norms do: **perplexity can be off by 7 percentile points** at its worst, bits/word by 1.4 and bits/token
+  by 2.2. Treat the perplexity chip as a coarser signal than the other two.
+
+A useful consequence: the bundled sample lands at the 47th percentile for bits/token while sitting at the
+91st for characters per word. Long words, ordinary predictability — the two measures are not proxies for
+each other.
 
 ### Model choice
 
