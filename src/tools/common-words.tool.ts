@@ -1,5 +1,5 @@
-import { COMMON_WORD_FLOOR, countCommonWords, isCommonWord } from '../core/data/common-words';
-import { isFamiliarWord } from '../core/metrics';
+import { COMMON_WORD_FLOOR, countCommonWords, isCommonWord, prevalenceOf } from '../core/data/common-words';
+import { isFamiliarWord, normalCdf } from '../core/metrics';
 import { similarity, type SemanticNeighbour } from '../core/similarity';
 import { splitSentences, tokenizeWords } from '../core/text';
 import type { AnnotationDraft, Stat, Tool } from '../core/types';
@@ -35,6 +35,13 @@ type Relation = 'base form' | 'shorter form' | 'similar meaning';
 export interface WordSuggestion {
   word: string;
   relation: Relation;
+  /**
+   * Probability a reader knows the suggested word, 0–1 — the list's probit read
+   * as a probability (`normalCdf`). The floor is 94.5%, the ceiling 99.5%, so
+   * this is the one number that says how *safe* a swap is: "commonplace" at 99%
+   * is a better bet than "occult" at 97%, whatever the cosine says.
+   */
+  known?: number;
   /**
    * How close, 0–1. For a word-family relation this is spelling distance — the
    * base word really is inside the flagged one; for `similar meaning` it is the
@@ -172,6 +179,15 @@ function prefixCandidates(word: string): string[] {
 
 const round2 = (value: number) => Number(value.toFixed(2));
 
+/**
+ * p(known) for a stored word: the prevalence list stores a probit, and this reads
+ * it as a probability. `undefined` for a word the list does not carry.
+ */
+export function knownProbability(word: string): number | undefined {
+  const probit = prevalenceOf(word);
+  return probit === undefined ? undefined : normalCdf(probit);
+}
+
 /** `Xenova/bge-small-en-v1.5` reads better in a stat card as `bge-small-en-v1.5`. */
 const shortModel = (model: string) => model.replace(/^[^/]+\//, '');
 
@@ -235,7 +251,10 @@ export function suggestFamiliarWords(
       (a.word < b.word ? -1 : a.word > b.word ? 1 : 0),
   );
 
-  const result = ranked.slice(0, capped);
+  const result = ranked.slice(0, capped).map((suggestion) => ({
+    ...suggestion,
+    known: knownProbability(suggestion.word),
+  }));
   if (suggestionCache.size >= 4000) suggestionCache.clear(); // bounded; options rarely move
   suggestionCache.set(key, result);
   return result;

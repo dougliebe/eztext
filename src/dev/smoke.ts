@@ -26,12 +26,18 @@ import {
   POLYSYLLABLE_THRESHOLD,
   SATURATED_Z,
   zScore,
+  normalCdf,
 } from '../core/metrics';
 import { contrastRatio, maxMixForContrast, mixHex, parseHex, relativeLuminance } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 import { COMMON_WORD_FLOOR, COMMON_WORDS, countCommonWords, prevalenceOf } from '../core/data/common-words';
 import { FUNCTION_WORDS } from '../core/data/function-words';
-import { commonWordsTool, suggestFamiliarWords, type WordSuggestion } from '../tools/common-words.tool';
+import {
+  commonWordsTool,
+  knownProbability,
+  suggestFamiliarWords,
+  type WordSuggestion,
+} from '../tools/common-words.tool';
 import type { SimilaritySignal } from '../core/similarity';
 import type { AnnotationDraft } from '../core/types';
 import { SAMPLE_TEXT } from '../sample-text';
@@ -843,6 +849,29 @@ function main(): void {
     }),
     uncommon.filter((annotation) => suggestionsOf(annotation)[0]?.relation !== 'similar meaning' && suggestionsOf(annotation).length > 0).length +
       ' words led by a family match',
+  );
+  check(
+    'p(known) reads the stored probit as a probability',
+    Math.abs((knownProbability('cat') ?? 0) - 0.995) < 0.002 &&
+      Math.abs((knownProbability('prose') ?? 0) - 0.957) < 0.002 &&
+      (knownProbability('cat') ?? 0) > (knownProbability('prose') ?? 0) &&
+      knownProbability('notawordinthelist') === undefined,
+    `cat ${((knownProbability('cat') ?? 0) * 100).toFixed(1)}%, prose ${((knownProbability('prose') ?? 0) * 100).toFixed(1)}%, absent: undefined`,
+  );
+  check(
+    'every suggestion reports how well known it is',
+    allSuggestions.every(
+      (suggestion) =>
+        suggestion.known !== undefined &&
+        // Nothing below the floor is stored, so 94.5% is the weakest a suggestion can be.
+        suggestion.known > 0.94 &&
+        suggestion.known <= 1 &&
+        Math.abs(suggestion.known - normalCdf(prevalenceOf(suggestion.word) ?? 0)) < 1e-9,
+    ),
+    allSuggestions
+      .slice(0, 4)
+      .map((suggestion) => `${suggestion.word} ${((suggestion.known ?? 0) * 100).toFixed(1)}%`)
+      .join(', '),
   );
   check(
     'every suggestion carries a relation and a score in range',

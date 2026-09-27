@@ -149,7 +149,9 @@
   changed): flags every word outside the list and offers replacements for each, grouped by how it can
   be fixed (`base form`, `shorter form`, `similar meaning`, `no match` — which double as the filter
   pills). Options: prevalence threshold, suggestions per word, meaning match, highlight only words with
-  a match, and an opt-in filter for capitalised names that do not open a sentence.
+  a match, and an opt-in filter for capitalised names that do not open a sentence. Each suggestion also
+  carries **p(known)** — the stored probit read as a probability (`normalCdf`), shown as a right-aligned
+  “Known” column beside the relation, one decimal so the 99.5% ceiling is not rounded up to certainty.
 - **Suggestions are ranked by how much they help, not by string distance**: word family first
   (“passage” → pass, “reshaping” → shape, “writers” → write — a shorter word for the same idea is what
   a readability tool is for), then embedding neighbours **by meaning**. There is deliberately no third

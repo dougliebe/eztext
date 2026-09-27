@@ -147,7 +147,7 @@ inclusion in `npm run smoke` for free.
 | Tool | What it shows | Stats it produces |
 | --- | --- | --- |
 | **Readability** | Long sentences and complex words overlapping, so it exercises the layering | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word, complex-word share |
-| **Common words** | Every word outside the words most readers know, and for each one the common words to swap in | unfamiliar/distinct counts, how many have a match, most flagged, longest, list size, which source answered |
+| **Common words** | Every word outside the words most readers know, and for each one the common words to swap in, with p(known) for each | unfamiliar/distinct counts, how many have a match, most flagged, longest, list size, which source answered |
 | **Surprisal** | Every word shaded transparent → red by how many bits the language model needed to predict it | mean bits/token, perplexity, hardest words, top-decile count, model name |
 
 Suggestions come from two places and both are about meaning, never spelling resemblance:
@@ -158,6 +158,11 @@ Suggestions come from two places and both are about meaning, never spelling rese
 2. **Meaning** — the local embedding model's nearest common words by cosine (`ubiquitous` →
    *commonplace, universally, universal*; `esoteric` → *occult, mystical*). This needs `npm run model`;
    without it the tool offers family matches only and says so.
+
+Each suggestion carries **p(known)** — the probability a reader knows the word, which is the stored
+probit read as a probability (`Φ(2.58) = 99.5%`, `Φ(1.72) = 95.7%`). It is the one number that says
+how safe a swap is: `commonplace` at 98.2% is a better bet than `brutalization` at 95.6%, whatever the
+cosine thinks.
 
 A word the model does not really know gets no meaning suggestions rather than confident nonsense —
 see [the similarity service](#how-it-is-wired) for how that is decided.
@@ -577,7 +582,9 @@ count always equals `% unfamiliar`, at any setting.
 
 Each stored word keeps the score it achieved, so raising the threshold narrows the list without
 touching the generated file: 24,607 words at the floor, 16,412 above 2, and 2,797 above 2.5. Nothing
-at or below 1.6 is stored at all, so a lower setting could not be honoured — hence the floor.
+at or below 1.6 is stored at all, so a lower setting could not be honoured — hence the floor. That
+score is a **probit**, which is also where p(known) comes from: the floor is 94.5% known and the
+ceiling 99.5% (`Φ⁻¹(0.995) = 2.58`, the most any word scores).
 
 **Closed-class words are exempt** (`src/core/data/function-words.ts`, 212 entries). The survey scores
 them erratically — `is` 1.93, `a` 2.05, `to` 2.09 against `cat` and `water` at the 2.58 ceiling — so

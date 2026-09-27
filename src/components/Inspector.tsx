@@ -257,6 +257,8 @@ const RELATION_LABELS: Record<string, string> = {
 interface SuggestionRow {
   word: string;
   relation?: string;
+  /** Probability a reader knows the word, 0–1, when the tool supplies it. */
+  known?: number;
 }
 
 /**
@@ -264,8 +266,8 @@ interface SuggestionRow {
  * words, for instance.
  *
  * Deliberately tolerant about the payload: a tool may send plain strings or
- * objects carrying `word` (and optionally `relation`), so any tool can offer
- * suggestions without the inspector knowing which tool it is.
+ * objects carrying `word` (and optionally `relation` and `known`), so any tool
+ * can offer suggestions without the inspector knowing which tool it is.
  */
 function readSuggestions(data: Record<string, unknown> | undefined): SuggestionRow[] {
   const raw = data?.suggestions;
@@ -280,7 +282,14 @@ function readSuggestions(data: Record<string, unknown> | undefined): SuggestionR
     if (entry && typeof entry === 'object' && 'word' in entry) {
       const word = String((entry as { word: unknown }).word ?? '');
       const relation = (entry as { relation?: unknown }).relation;
-      if (word) rows.push({ word, relation: typeof relation === 'string' ? relation : undefined });
+      const known = (entry as { known?: unknown }).known;
+      if (word) {
+        rows.push({
+          word,
+          relation: typeof relation === 'string' ? relation : undefined,
+          known: typeof known === 'number' && Number.isFinite(known) ? known : undefined,
+        });
+      }
     }
   }
   return rows;
@@ -295,6 +304,9 @@ function Suggestions({ items }: { items: SuggestionRow[] }) {
             <th scope="col">#</th>
             <th scope="col">Suggestion</th>
             <th scope="col">Relation</th>
+            <th scope="col" title="Probability a reader knows the word">
+              Known
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -306,6 +318,11 @@ function Suggestions({ items }: { items: SuggestionRow[] }) {
                 <span className="inspector__hint">
                   {item.relation ? (RELATION_LABELS[item.relation] ?? item.relation) : 'similar word'}
                 </span>
+              </td>
+              {/* One decimal on purpose: the ceiling is 99.5%, and rounding it to
+                  "100%" would claim a certainty the survey does not have. */}
+              <td className="alts__bits">
+                {item.known === undefined ? '—' : `${(item.known * 100).toFixed(1)}%`}
               </td>
             </tr>
           ))}

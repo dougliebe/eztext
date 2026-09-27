@@ -760,6 +760,8 @@ const inspector = await page.evaluate(() => {
     word: node.querySelector('.inspector__word')?.textContent?.trim() ?? null,
     suggestions: [...node.querySelectorAll('.alts__word')].map((el) => el.textContent.trim()),
     relations: [...node.querySelectorAll('.inspector__hint')].map((el) => el.textContent.trim()),
+    // The last column of each row: p(known), read from the list's probit.
+    known: [...node.querySelectorAll('.alts tbody tr')].map((row) => row.lastElementChild?.textContent?.trim() ?? ''),
   };
 });
 check(
@@ -769,9 +771,12 @@ check(
 );
 check('the inspector lists the nearest listed words', (inspector?.suggestions.length ?? 0) > 0, inspector?.suggestions.join(', '));
 check(
-  'each suggestion says how it relates',
-  inspector !== null && inspector.relations.length === inspector.suggestions.length,
-  inspector?.relations.join(', '),
+  'each suggestion says how it relates, and how well known it is',
+  inspector !== null &&
+    inspector.relations.length === inspector.suggestions.length &&
+    (inspector.known ?? []).length === inspector.suggestions.length &&
+    (inspector.known ?? []).every((value) => /^\d{1,3}(\.\d)?%$/.test(value)),
+  `${inspector?.relations.join(', ')} — known ${inspector?.known?.join(', ')}`,
 );
 
 // When the embedding side of the model process is up, the suggestions must be
