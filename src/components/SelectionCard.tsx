@@ -14,10 +14,11 @@ interface SelectionCardProps {
 /**
  * Inspector for whatever is selected in the preview.
  *
- * Pinned to the top of the results pane so it stays put while the list scrolls
- * beneath it. When the selected range is a scored word it shows the whole
- * distribution the model had at that position — the point of the surprisal tool
- * is not the number, it is *what else the word could have been*.
+ * Rendered above the scrolling results list, in its own bounded region, so it
+ * stays put while the list scrolls without covering it. When the selected range
+ * is a scored word it shows the whole distribution the model had at that
+ * position — the point of the surprisal tool is not the number, it is *what else
+ * the word could have been*.
  */
 export function SelectionCard({ selection, scores, text, example, onClose }: SelectionCardProps) {
   if (!selection) return null;

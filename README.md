@@ -275,9 +275,10 @@ typing never blocks on analysis.
 - **Run model** in the input bar scores the document with the local language model (see *Surprisal*).
 - **Topbar metric** (the five ratios) shades the preview by that metric — click again to clear.
 - **Hover** a highlight, result row or coverage block → the same annotation lights up everywhere.
-- **Click** any highlight — including a surprisal-shaded word — and the results pane pins an inspector at the
-top showing the selected text in context and, for model-scored words, the whole distribution the model had
-at that position.
+- **Click** any highlight — including a surprisal-shaded word — and the results pane pins a bounded
+  inspector above the scrolling list: the selected text in context, the rule that fired, an example fix,
+  and (for dense GSDS units) the weighted shares behind the range. A tall inspector scrolls internally
+  rather than covering the list.
 - **Click** a result row or coverage block → the preview scrolls to that annotation and the row is
   kept in view. Clicking `JSON` gives you the whole run, ready to copy.
 - **Drag the splitters** (or focus one and use arrow keys) to rebalance input / preview / results.

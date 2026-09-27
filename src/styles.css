@@ -1614,10 +1614,16 @@ button {
    Selection inspector (pinned above the results)
    ========================================================================== */
 
+/* The inspector is its own bounded region above the list, not an overlay. A
+   tall inspector (shares + example) used to sit on top of the scrolling rows
+   and make both unreadable; it scrolls internally instead. */
+.pane__inspector {
+  flex: 0 0 auto;
+  max-height: min(60%, 340px);
+  overflow: auto;
+}
+
 .selection {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
   padding: 8px 12px 10px;

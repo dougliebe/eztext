@@ -131,6 +131,11 @@
 - **Highlight renderer shows tint only** (user request): the stacked per-layer underlines are gone.
   Each nested layer still washes its own translucent background, and the washes compound on overlap,
   so depth remains visible without any decoration under the text.
+- **Inspector no longer covers the list** (user report): it was a `position: sticky` panel inside the
+  scrolling results body, and a tall one (373px on the GSDS dense view, in a ~140px pane) stacked over
+  the rows and made both unreadable. It is now a bounded region between the tab bar and the list
+  (`pane__inspector`, `max-height: min(60%, 340px)`, internal scroll), so it still stays put but cannot
+  overlap. `ui-check` asserts overlap ≤ 0, a non-sticky position and internal scrolling.
 - **GSDS now highlights density, not tokens** (user request): the default view ranks T-units by their
   exact share of the weighted total — `core/gsds.ts` computes a per-unit decomposition whose shares sum
   back to the published contributions, which smoke verifies to 1e-9 — shades the top quarter with a

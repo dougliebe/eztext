@@ -407,13 +407,15 @@ export default function App() {
             onHover={setHoverId}
             onSelect={selectFromList}
             selection={
-              <SelectionCard
-                selection={selectedAnnotation}
-                scores={freshScores}
-                text={deferredText}
-                example={selectedGroupExample}
-                onClose={() => setSelectedId(null)}
-              />
+              selectedAnnotation ? (
+                <SelectionCard
+                  selection={selectedAnnotation}
+                  scores={freshScores}
+                  text={deferredText}
+                  example={selectedGroupExample}
+                  onClose={() => setSelectedId(null)}
+                />
+              ) : null
             }
           />
         </div>

@@ -391,6 +391,35 @@ const inspector = await page.evaluate(() => ({
 check('the inspector names the rule that fired', inspector.detail.length > 0, inspector.detail.slice(0, 90));
 check('the inspector shows a fix example', inspector.example.includes('→'), inspector.example.slice(0, 110));
 check('the inspector breaks a dense unit into its shares', inspector.contributors > 0, `${inspector.contributors} contributors`);
+
+// Regression: the inspector used to be a sticky overlay inside the scrolling
+// list, so a tall one covered the rows. It is a bounded region above the list
+// now, scrolling internally instead of stacking on the content.
+const inspectorGeometry = await page.evaluate(() => {
+  const pane = document.querySelector('.pane__inspector');
+  const body = document.querySelector('.pane--results .pane__body');
+  const paneBox = pane.getBoundingClientRect();
+  const bodyBox = body.getBoundingClientRect();
+  return {
+    overlap: Math.round(paneBox.bottom - bodyBox.top),
+    inspectorHeight: Math.round(paneBox.height),
+    bodyHeight: Math.round(bodyBox.height),
+    scrollable: pane.scrollHeight > pane.clientHeight,
+    position: getComputedStyle(document.querySelector('.selection')).position,
+  };
+});
+// The splitter is parked at 79.5% here, so the results pane is at its smallest;
+// any visible list is enough, what matters is that the inspector never covers it.
+check(
+  'the inspector does not cover the results list',
+  inspectorGeometry.overlap <= 0 && inspectorGeometry.bodyHeight > 0 && inspectorGeometry.position !== 'sticky',
+  `inspector ${inspectorGeometry.inspectorHeight}px, list ${inspectorGeometry.bodyHeight}px, overlap ${inspectorGeometry.overlap}px`,
+);
+check(
+  'a tall inspector scrolls internally',
+  inspectorGeometry.scrollable,
+  `${inspectorGeometry.inspectorHeight}px capped, content overflows`,
+);
 await page.locator('.selection__close').click();
 await page.waitForTimeout(100);
 
