@@ -147,17 +147,17 @@
   bars, bits, bits saved) and which of them was the word actually written.
 - **Common words tool** (`src/tools/common-words.tool.ts`, renamed from Dale–Chall when the list
   changed): flags every word outside the list and offers replacements for each, grouped by how it can
-  be fixed (`base form`, `shorter form`, `similar meaning`, `close spelling`, `no match`, which double
-  as the filter pills). Options: suggestions per word, match strength, highlight only words with a
-  match, and an opt-in filter for capitalised names that do not open a sentence.
-  `close spelling`, `no match`, which double as the filter pills). Options: suggestions per word, match
-  strength, highlight only words with a match, and an opt-in filter for capitalised names that do not
-  open a sentence.
+  be fixed (`base form`, `shorter form`, `similar meaning`, `no match` — which double as the filter
+  pills). Options: prevalence threshold, suggestions per word, meaning match, highlight only words with
+  a match, and an opt-in filter for capitalised names that do not open a sentence.
 - **Suggestions are ranked by how much they help, not by string distance**: word family first
   (“passage” → pass, “reshaping” → shape, “writers” → write — a shorter word for the same idea is what
-  a readability tool is for), then embedding neighbours by meaning, then spelling as a no-model
-  fallback. Spelling alone was poor: “enormous” has no near neighbour among 3,000 fourth-grade words,
-  so the tool said nothing, and “merely” got “merry” because two letters matched.
+  a readability tool is for), then embedding neighbours **by meaning**. There is deliberately no third
+  tier: spelling distance was removed because on the words that actually get flagged it offered
+  coincidence instead of vocabulary — “merely” → “merry”, “defenestration” → “deforestation”,
+  “perspicacious” → “perspiration” — and where spelling was not available the honest answer is the
+  family match or nothing. Consequence: with the model process stopped, only word-family suggestions
+  exist, and the panel's “Nearest words from” stat says so.
 - **Local word embeddings in the model process** (`scripts/word-embeddings.mjs`, served at
   `POST /similarity`): bge-small-en-v1.5 (34 MB, measured clearly better than MiniLM on single words),
   the 2,941-word list embedded once (1.8 s) and cached as 6 MB of vectors in gitignored `.models/`. A
@@ -351,7 +351,7 @@ the top of the results pane when something in the preview is selected).
 - **The `similarity` signal is keyed by word, not by document, and is optional.** A word's embedding
   does not depend on where it appears, so answers accumulate across edits instead of being discarded on
   every keystroke; a model that is not running means no signal, not an error, and the tool falls back to
-  spelling. The tool re-checks every neighbour against the common-word list before showing it — the
+  word family alone. The tool re-checks every neighbour against the common-word list before showing it — the
   signal crosses a process boundary, and “this word is on the list” has to survive bad data.
 - **Meaning suggestions are refused for words the embedding model does not really know.** Measured on
   the 24,607-word list: words the model has learned tokenize in 1–2 pieces and get sensible neighbours
@@ -359,7 +359,7 @@ the top of the results pane when something in the preview is selected).
   3–5 pieces and come back with *confident* nonsense — “bibliopolic” → bibliographic 0.83,
   “litotes” → lit 0.76, “zygote” → pokey 0.67. Those scores sit *above* the good answers, so no cosine
   floor can separate them. The service therefore asks the model's own tokenizer whether it knows the
-  word (more than 2 pieces = refuse, empty list) and lets word family and spelling answer instead: all
+  word (more than 2 pieces = refuse, empty list) and lets word family answer instead: all
   eighteen rare words probed now return nothing, and the good answers survive. The floor stays 0.55 on
   the server because the tool's `match` strength decides what to show.
 - **Nothing leaves the machine**: the weights download once (34 MB) and are then loaded from

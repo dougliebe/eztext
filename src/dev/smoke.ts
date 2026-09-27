@@ -809,7 +809,7 @@ function main(): void {
   check(
     'groups are the suggestion relations plus “no match”',
     uncommon.every((annotation) =>
-      ['base form', 'shorter form', 'similar meaning', 'close spelling', 'no match'].includes(
+      ['base form', 'shorter form', 'similar meaning', 'no match'].includes(
         annotation.group ?? '',
       ),
     ),
@@ -835,20 +835,20 @@ function main(): void {
   );
   // Per annotation, not across the flattened list: families must come first.
   check(
-    'family matches outrank spelling matches',
+    'family matches outrank meaning matches',
     uncommon.every((annotation) => {
       const list = suggestionsOf(annotation);
-      const firstSpelling = list.findIndex((suggestion) => suggestion.relation === 'close spelling');
-      return firstSpelling === -1 || list.slice(firstSpelling).every((s) => s.relation === 'close spelling');
+      const firstMeaning = list.findIndex((suggestion) => suggestion.relation === 'similar meaning');
+      return firstMeaning === -1 || list.slice(firstMeaning).every((s) => s.relation === 'similar meaning');
     }),
-    uncommon.filter((annotation) => suggestionsOf(annotation)[0]?.relation !== 'close spelling' && suggestionsOf(annotation).length > 0).length +
+    uncommon.filter((annotation) => suggestionsOf(annotation)[0]?.relation !== 'similar meaning' && suggestionsOf(annotation).length > 0).length +
       ' words led by a family match',
   );
   check(
     'every suggestion carries a relation and a score in range',
     allSuggestions.every(
       (suggestion) =>
-        ['base form', 'shorter form', 'close spelling'].includes(suggestion.relation) &&
+        ['base form', 'shorter form', 'similar meaning'].includes(suggestion.relation) &&
         suggestion.similarity > 0 &&
         suggestion.similarity <= 1,
     ),
@@ -880,12 +880,6 @@ function main(): void {
     'a word with no listed neighbour suggests nothing',
     suggestFamiliarWords('zygote').length === 0 && suggestFamiliarWords('petrichor').length === 0,
     `zygote: ${suggestFamiliarWords('zygote').length}, petrichor: ${suggestFamiliarWords('petrichor').length}`,
-  );
-  check(
-    'match strength filters the spelling matches',
-    suggestFamiliarWords('merely', { minSimilarity: 0.45 }).length >
-      suggestFamiliarWords('merely', { minSimilarity: 0.75 }).length,
-    `loose ${suggestFamiliarWords('merely', { minSimilarity: 0.45 }).length} vs strict ${suggestFamiliarWords('merely', { minSimilarity: 0.75 }).length}`,
   );
   check(
     'the suggestion cap is honoured, including zero',
@@ -991,10 +985,17 @@ function main(): void {
     suggestionsForWord(semanticAnnotations, 'brutalist').join(', '),
   );
   check(
-    'meaning replaces the spelling guess once the model has answered',
-    suggestionsForWord(semanticAnnotations, 'brutalist').includes('harsh/similar meaning') &&
-      !suggestionsForWord(semanticAnnotations, 'brutalist').some((entry) => entry.endsWith('/close spelling')),
-    suggestionsForWord(semanticAnnotations, 'brutalist').join(', '),
+    'without the model only word family answers',
+    suggestionsForWord(uncommon, 'brutalist').join(' ') === 'brutal/base form' &&
+      !suggestionsForWord(uncommon, 'brutalist').some((entry) => entry.endsWith('/similar meaning')),
+    suggestionsForWord(uncommon, 'brutalist').join(', ') || '(none)',
+  );
+  check(
+    'no suggestion is ever a spelling coincidence',
+    allSuggestions.every((suggestion) =>
+      ['base form', 'shorter form', 'similar meaning'].includes(suggestion.relation),
+    ),
+    `${allSuggestions.length} suggestions, relations: ${[...new Set(allSuggestions.map((s) => s.relation))].join(', ')}`,
   );
   check(
     'word family still outranks meaning',
@@ -1010,17 +1011,17 @@ function main(): void {
     'match strength filters the meaning matches too',
     suggestFamiliarWords('zygote', {
       semantic: fakeSimilarity.words.zygote,
-      semanticFloor: 0.62,
+      minSimilarity: 0.62,
     }).some((suggestion) => suggestion.word === 'cell') &&
       !suggestFamiliarWords('zygote', {
         semantic: fakeSimilarity.words.zygote,
-        semanticFloor: 0.75,
+        minSimilarity: 0.75,
       }).some((suggestion) => suggestion.word === 'cell'),
     'cell at 0.66: kept at balanced, dropped at strict',
   );
   check(
     'without the signal the panel says so',
-    commonRun.stats?.find((stat) => stat.id === 'common-words.source')?.value === 'spelling only',
+    commonRun.stats?.find((stat) => stat.id === 'common-words.source')?.value === 'word family only',
     String(commonRun.stats?.find((stat) => stat.id === 'common-words.source')?.value),
   );
   check(

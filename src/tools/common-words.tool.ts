@@ -1,6 +1,6 @@
-import { COMMON_WORD_FLOOR, COMMON_WORDS, countCommonWords, isCommonWord } from '../core/data/common-words';
+import { COMMON_WORD_FLOOR, countCommonWords, isCommonWord } from '../core/data/common-words';
 import { isFamiliarWord } from '../core/metrics';
-import { commonPrefixLength, similarity, type SemanticNeighbour } from '../core/similarity';
+import { similarity, type SemanticNeighbour } from '../core/similarity';
 import { splitSentences, tokenizeWords } from '../core/text';
 import type { AnnotationDraft, Stat, Tool } from '../core/types';
 
@@ -9,69 +9,54 @@ import type { AnnotationDraft, Stat, Tool } from '../core/types';
  * metric counts, and for each one names the nearest words that *are* common, so
  * the number is something you can act on rather than just read.
  *
- * Suggestions come from three places, in this order:
+ * Suggestions come from two places, in this order:
  *
  *   1. **Word family** — the flagged word is a listed word wearing a prefix or a
  *      derivational suffix ("enormousness" → "enormous", "reshaping" → "shape").
- *      This is the high-precision signal: the base word is *in* the flagged word.
- *   2. **Spelling** — edit distance against listed words sharing an opening and
- *      a length ballpark. This catches simple variants and typos, and is
- *      necessarily noisier, which is why it ranks below the family matches and
- *      can be filtered by the `match` option.
+ *      Same lexeme, different form: the meaning is carried over exactly, and the
+ *      base word is *in* the flagged word.
+ *   2. **Meaning** — the embedding service's nearest common words by cosine,
+ *      which needs the model process. Filtered by the `match` strength.
  *
- * The honest limitation, stated in the tool description rather than hidden: this
- * is a *spelling* similarity, not a semantic one. eztext has no embeddings and
- * no runtime dependencies, so "similar" means "close in letters or word
- * family". "enormous" has no near-listed word at all, and the tool says so
- * instead of inventing one.
+ * There used to be a third tier, spelling distance, and it is gone on purpose:
+ * on the words that actually get flagged it offered coincidence rather than
+ * vocabulary — "merely" → "merry", "defenestration" → "deforestation" — and
+ * the embedding tier measured both better and more honestly. A word the model
+ * does not know now gets its family match or nothing, which is the truth about
+ * it.
+ *
+ * The remaining honest limitation: without the model process there are no
+ * meaning suggestions at all, only word-family ones.
  */
 
 /** Relations, best first. Also used verbatim as the annotation groups. */
-type Relation = 'base form' | 'shorter form' | 'similar meaning' | 'close spelling';
+type Relation = 'base form' | 'shorter form' | 'similar meaning';
 
 export interface WordSuggestion {
   word: string;
   relation: Relation;
   /**
-   * How close, 0–1. For family and spelling relations this is spelling
-   * distance; for `similar meaning` it is the embedding cosine — which is why
-   * the inspector shows the relation rather than pretending the two are the
-   * same number.
+   * How close, 0–1. For a word-family relation this is spelling distance — the
+   * base word really is inside the flagged one; for `similar meaning` it is the
+   * embedding cosine, which is why the inspector shows the relation rather than
+   * pretending the two are the same number.
    */
   similarity: number;
 }
 
 /**
  * Ranking order. Word family first: "passage" → "pass" is a *simpler word for
- * the same idea*, which is what a readability tool is for. Meaning comes next,
- * and spelling last — it only runs when no model answered, and it is the tier
- * that offers "merely" → "merry".
+ * the same idea*, which is what a readability tool is for. Meaning comes second,
+ * and there is nothing after it: see the note above about spelling.
  */
 const RELATION_RANK: Record<Relation, number> = {
   'base form': 0,
   'shorter form': 1,
   'similar meaning': 2,
-  'close spelling': 3,
 };
 
-/** Match strength → how close a spelling has to be before it is offered. */
-const STRENGTH: Record<string, number> = { loose: 0.45, balanced: 0.6, strict: 0.75 };
-
-/**
- * The same setting, applied to embedding cosines. They are a different scale
- * from spelling distance ("enormous"/"huge" is 0.96; a spelling neighbour is
- * lucky to reach 0.7), so the floors differ while the intent does not.
- */
-const SEMANTIC_STRENGTH: Record<string, number> = { loose: 0.55, balanced: 0.62, strict: 0.75 };
-
-/** Below this length a spelling match is noise, not a suggestion. */
-const MIN_SPELLING_LENGTH = 4;
-
-/** Spelling floor for words shorter than six letters, whatever the strength. */
-const SHORT_WORD_FLOOR = 0.7;
-
-/** How far a spelling candidate's length may differ from the flagged word. */
-const LENGTH_WINDOW = 3;
+/** Match strength → how close in meaning a suggestion has to be. */
+const STRENGTH: Record<string, number> = { loose: 0.55, balanced: 0.62, strict: 0.75 };
 
 /**
  * Derivational suffixes. Inflectional ones (plural, -ed, -ing, -er/-est, -ly)
@@ -107,22 +92,6 @@ function lettersOnly(word: string): string {
 }
 
 /** Stored words bucketed by first letter, so a lookup never scans all 24,000. */
-let indexByInitial: Map<string, string[]> | null = null;
-
-function bucketFor(initial: string): string[] {
-  if (!indexByInitial) {
-    indexByInitial = new Map();
-    for (const word of COMMON_WORDS.keys()) {
-      const key = lettersOnly(word).charAt(0);
-      if (!key) continue;
-      const bucket = indexByInitial.get(key);
-      if (bucket) bucket.push(word);
-      else indexByInitial.set(key, [word]);
-    }
-  }
-  return indexByInitial.get(initial) ?? [];
-}
-
 /**
  * Candidate base words hidden inside `word` by a suffix, a prefix, or both
  * ("reshaping" → reshape → shape), each tagged with how it was reached.
@@ -210,8 +179,7 @@ const shortModel = (model: string) => model.replace(/^[^/]+\//, '');
  * Nearest listed words for one flagged word, best first.
  *
  * `semantic` is what the embedding model said (or `undefined` when it is not
- * running): those neighbours are the model's answer, so the spelling tier — its
- * stand-in — is skipped as soon as the model has spoken for this word.
+ * running, in which case only word-family matches can be found).
  *
  * Exported for the smoke test, which checks the promise this tool makes: every
  * suggestion really is on the list, whatever source it came from.
@@ -222,13 +190,11 @@ export function suggestFamiliarWords(
     limit = 4,
     minSimilarity = STRENGTH.balanced,
     semantic,
-    semanticFloor = SEMANTIC_STRENGTH.balanced,
     threshold = COMMON_WORD_FLOOR,
   }: {
     limit?: number;
     minSimilarity?: number;
     semantic?: SemanticNeighbour[];
-    semanticFloor?: number;
     threshold?: number;
   } = {},
 ): WordSuggestion[] {
@@ -236,7 +202,7 @@ export function suggestFamiliarWords(
   const word = lettersOnly(rawWord);
   if (capped === 0 || word.length < 3) return [];
 
-  const key = `${word}|${capped}|${minSimilarity}|${semanticFloor}|${threshold}|${semantic ? semantic.length : 'none'}`;
+  const key = `${word}|${capped}|${minSimilarity}|${threshold}|${semantic ? semantic.length : 'none'}`;
   const cached = suggestionCache.get(key);
   if (cached) return cached;
 
@@ -254,35 +220,11 @@ export function suggestFamiliarWords(
     // process, so anything it sends is re-checked against the list here —
     // including the current threshold, which the server may not have seen.
     for (const neighbour of semantic) {
-      if (neighbour.score < semanticFloor) continue;
+      if (neighbour.score < minSimilarity) continue;
       if (seen.has(neighbour.word) || !isCommonWord(neighbour.word, threshold)) continue;
       seen.add(neighbour.word);
       ranked.push({ word: neighbour.word, relation: 'similar meaning', similarity: round2(neighbour.score) });
     }
-  }
-
-  for (const candidate of semantic ? [] : bucketFor(word.charAt(0))) {
-    if (seen.has(candidate)) continue;
-    if (candidate.length < MIN_SPELLING_LENGTH) continue;
-    if (Math.abs(candidate.length - word.length) > LENGTH_WINDOW) continue;
-    // The bucket index holds every stored word; the threshold decides which of
-    // them may be suggested.
-    if (!isCommonWord(candidate, threshold)) continue;
-
-    // Short words are where spelling resemblance misleads most ("verbs" and
-    // "very" differ by two letters and mean nothing alike), so they have to
-    // clear a higher bar than the chosen strength.
-    const floor = word.length < 6 ? Math.max(minSimilarity, SHORT_WORD_FLOOR) : minSimilarity;
-    const prefixFloor = word.length <= 4 ? 3 : 2;
-
-    const longest = Math.max(word.length, candidate.length);
-    const score = similarity(word, candidate, Math.ceil(longest * (1 - floor)) + 1);
-    if (score < floor) continue;
-    // A shared opening is what makes a spelling match feel related instead of
-    // accidental — unless the two are nearly identical anyway.
-    if (commonPrefixLength(word, candidate) < prefixFloor && score < 0.8) continue;
-
-    ranked.push({ word: candidate, relation: 'close spelling', similarity: round2(score) });
   }
 
   ranked.sort(
@@ -335,8 +277,8 @@ function isCapitalised(text: string): boolean {
 function describe(word: string, suggestions: WordSuggestion[]): string {
   if (suggestions.length === 0) {
     return (
-      `“${word}” is not a common word, and no listed word is close to it in meaning or ` +
-      `spelling — usually a name, a technical term, or simply rarer than a word most readers know.`
+      `“${word}” is not a common word, and no listed word is close to it in meaning — usually ` +
+      `a name, a technical term, or simply rarer than the model knows.`
     );
   }
 
@@ -345,8 +287,7 @@ function describe(word: string, suggestions: WordSuggestion[]): string {
   // is which from a parenthetical.
   const quote = (list: WordSuggestion[]) => list.map((suggestion) => `“${suggestion.word}”`).join(', ');
   const meaning = suggestions.filter((suggestion) => suggestion.relation === 'similar meaning');
-  const family = suggestions.filter((suggestion) => suggestion.relation !== 'similar meaning' && suggestion.relation !== 'close spelling');
-  const spelling = suggestions.filter((suggestion) => suggestion.relation === 'close spelling');
+  const family = suggestions.filter((suggestion) => suggestion.relation !== 'similar meaning');
 
   const parts: string[] = [];
   if (family.length > 0) {
@@ -354,7 +295,6 @@ function describe(word: string, suggestions: WordSuggestion[]): string {
     parts.push(`${quote(family)} ${family.length === 1 ? `is ${base}` : `are related words`}`);
   }
   if (meaning.length > 0) parts.push(`${quote(meaning)} ${meaning.length === 1 ? 'is' : 'are'} closer in meaning`);
-  if (spelling.length > 0) parts.push(`${quote(spelling)} ${spelling.length === 1 ? 'is' : 'are'} close in spelling`);
 
   return `“${word}” is not a common word. On the list: ${parts.join('; ')}.`;
 }
@@ -372,7 +312,7 @@ export const commonWordsTool: Tool = {
   // switch on for someone else.
   defaultEnabled: false,
   // Meaning-based neighbours come from the model process. Without it the tool
-  // still works, from word family and spelling, so this is a pure upgrade.
+  // still works, from word family alone, so this is a pure upgrade.
   requires: ['similarity'],
   options: [
     {
@@ -401,14 +341,14 @@ export const commonWordsTool: Tool = {
     {
       kind: 'select',
       id: 'match',
-      label: 'Match strength',
+      label: 'Meaning match',
       default: 'balanced',
       choices: [
         { value: 'loose', label: 'Loose' },
         { value: 'balanced', label: 'Balanced' },
         { value: 'strict', label: 'Strict' },
       ],
-      hint: 'How close a suggestion must be — meaning matches included. Word-family matches always qualify.',
+      hint: 'How close in meaning a suggestion must be. Word-family matches always qualify.',
     },
     {
       kind: 'select',
@@ -438,7 +378,6 @@ export const commonWordsTool: Tool = {
     );
     const strength = String(options.match ?? 'balanced');
     const minSimilarity = STRENGTH[strength] ?? STRENGTH.balanced;
-    const semanticFloor = SEMANTIC_STRENGTH[strength] ?? SEMANTIC_STRENGTH.balanced;
     const onlyWithMatch = String(options.show ?? 'all') === 'fixable';
     const ignoreNames = Boolean(options.ignoreNames ?? false);
     const neighbours = signals?.similarity?.words;
@@ -466,7 +405,6 @@ export const commonWordsTool: Tool = {
         limit,
         minSimilarity,
         semantic: neighbours?.[word],
-        semanticFloor,
         threshold,
       });
       flagged += 1;
@@ -526,7 +464,7 @@ export const commonWordsTool: Tool = {
       {
         id: 'common-words.source',
         label: 'Nearest words from',
-        value: signals?.similarity?.model ? shortModel(signals.similarity.model) : 'spelling only',
+        value: signals?.similarity?.model ? shortModel(signals.similarity.model) : 'word family only',
         hint: signals?.similarity?.model ? 'embeddings, plus word family' : 'start the model for meaning',
         tone: signals?.similarity?.model ? undefined : 'warn',
       },

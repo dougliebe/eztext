@@ -147,7 +147,20 @@ inclusion in `npm run smoke` for free.
 | Tool | What it shows | Stats it produces |
 | --- | --- | --- |
 | **Readability** | Long sentences and complex words overlapping, so it exercises the layering | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word, complex-word share |
+| **Common words** | Every word outside the words most readers know, and for each one the common words to swap in | unfamiliar/distinct counts, how many have a match, most flagged, longest, list size, which source answered |
 | **Surprisal** | Every word shaded transparent → red by how many bits the language model needed to predict it | mean bits/token, perplexity, hardest words, top-decile count, model name |
+
+Suggestions come from two places and both are about meaning, never spelling resemblance:
+
+1. **Word family** — the flagged word is a common word wearing a prefix or a derivational suffix
+   (`brutalist` → brutal, `reshaping` → shape, `writers` → write). Same lexeme, so the meaning carries
+   over exactly, and it needs no model.
+2. **Meaning** — the local embedding model's nearest common words by cosine (`ubiquitous` →
+   *commonplace, universally, universal*; `esoteric` → *occult, mystical*). This needs `npm run model`;
+   without it the tool offers family matches only and says so.
+
+A word the model does not really know gets no meaning suggestions rather than confident nonsense —
+see [the similarity service](#how-it-is-wired) for how that is decided.
 
 Earlier revisions shipped Sentences, Verbs and Repeated-words tools as worked examples of the contract.
 They were removed because they were demonstrations rather than things worth reading with — the recipe

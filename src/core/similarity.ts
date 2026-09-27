@@ -1,11 +1,12 @@
 /**
- * Spelling similarity, for suggesting words a reader is more likely to know.
+ * String distance, and the shape of the neighbours the model process returns.
  *
- * Deliberately string-based: eztext carries no thesaurus, no embeddings and no
- * runtime dependencies, so "similar" here means *close in letters or in word
- * family*. Tools that use this must say so rather than implying a synonym
- * dictionary — the honest promise is "the nearest words that are on the list",
- * and the reader judges whether the meaning survives.
+ * The edit distance here is no longer used to *suggest* words: spelling
+ * resemblance turned out to be the wrong signal for "words a reader knows"
+ * ("merely" → "merry", "defenestration" → "deforestation"), and meaning comes
+ * from embeddings instead. What remains is measurement — how much of the flagged
+ * word a word-family match accounts for, so "brutal" scores higher against
+ * "brutalist" than "brute" does — plus the shared types for the semantic signal.
  */
 
 /**
@@ -58,20 +59,6 @@ export function similarity(a: string, b: string, limit = Number.POSITIVE_INFINIT
 
   const distance = editDistance(a, b, limit);
   return distance > limit ? 0 : 1 - distance / longest;
-}
-
-/**
- * How many leading characters two words share.
- *
- * A shared opening is what makes a spelling match feel related rather than
- * accidental ("enormous"/"enormously" share eight, "merely"/"merry" two), so
- * callers use this as a floor before offering a spelling suggestion.
- */
-export function commonPrefixLength(a: string, b: string): number {
-  const limit = Math.min(a.length, b.length);
-  let index = 0;
-  while (index < limit && a.charCodeAt(index) === b.charCodeAt(index)) index += 1;
-  return index;
 }
 
 /* ------------------------------------------------------------------ */
