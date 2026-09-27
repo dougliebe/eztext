@@ -23,6 +23,17 @@
   JSON (copyable export of the whole run).
 - Tools: Readability only. Sentences, Verbs and Repeated words were removed as examples — they were
   demonstrations of the contract rather than things worth reading with (recoverable from git history).
+- **Surprisal model** (`npm run model`): a local process runs GPT-2 under native ONNX Runtime and serves
+  per-word surprisal plus perturbation gains at /api/model, proxied by Vite. Weights download once into
+  .models/ (125 MB, gitignored), then it is offline. Scoring arithmetic is pure and lives in
+  src/core/surprisal.ts; the server bundles that file so both sides share one implementation.
+  Measured: 197 tokens in 396 ms, 1,198 tokens in 2.5 s (1024-token windows with one token of left
+  context). Line endings are normalised to `\n` first — GPT-2 has never seen `\r` and
+  scores it at 50+ bits, which would otherwise poison every paragraph break.
+- Surprisal smoke tests cover the arithmetic on a synthetic 4-token vocabulary: first token has no
+  surprisal, predicted tokens cost ~0, unexpected ones cost >10 bits, the gain equals the surprise the
+  expected piece would have avoided, subword pieces fold into words with exact offsets, and two guards
+  (a NaN topK and a zero topK) hold.
 - Hover/click synchronisation across preview ↔ rows ↔ coverage strip; localStorage persistence.
 - `npm run smoke`: headless pipeline run with invariant assertions (tiling, layering, coverage,
   unique ids) plus a `renderToStaticMarkup` check of the full app.
@@ -96,6 +107,11 @@
   changed defaults reach existing sessions.
 
 ## Next steps
+- **Wire surprisal into the UI**: it is computed and served but nothing renders it yet. Plan: add
+  'Surprisal' and 'Perturbation' as selectable preview modes (they are per-word intensities, exactly the
+  heatmap shape) plus a results table of the top offenders with the model's preferred alternative; the
+  client needs a debounced fetch to /api/model/score and a 'model not running' state.
+
 - An "unfamiliar words" tool that highlights exactly what `% unfamiliar` counts, reusing
   `isFamiliarWord` — makes the topbar number explainable and is the obvious companion to it.
 - Cross-validate our metrics against the corpus's own columns (`Flesch-Reading-Ease`,

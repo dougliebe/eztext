@@ -10,6 +10,7 @@
  *   3. layers inside a segment are ordered widest → narrowest.
  */
 import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
+import { scoreWindow, summarise, surprisalIntensity } from '../core/surprisal';
 import { runAnalysis } from '../core/engine';
 import {
   computeMetrics,
@@ -387,6 +388,102 @@ function main(): void {
   check(
     '  a document with no polysyllables yields no spans',
     buildHeatmap('The cat sat on the mat and had fun.', 'polysyllabicShare').length === 0,
+  );
+
+  console.log(`\n${RULE}\nSurprisal scoring`);
+
+  // A tiny synthetic vocabulary: 4 pieces where tokens 1 and 3 are cheap and
+  // token 2 is the one the model did not expect.
+  const probeVocab = 4;
+  const pieces = ['A', ' B', ' C', ' D'];
+  const probeIds = [0, 1, 2, 3];
+  const probeLogits = new Float32Array(probeIds.length * probeVocab);
+  const teach = (position: number, id: number, value: number) => {
+    probeLogits[position * probeVocab + id] = value;
+  };
+  teach(0, 1, 8); // confident about " B"
+  teach(1, 3, 8); // but at the next position it expects " D", not " C"
+  teach(2, 3, 8); // confident about " D"
+
+  const probeDecode = (id: number) => pieces[id] ?? '?';
+  const scorable = () =>
+    scoreWindow({
+      logits: probeLogits,
+      positions: probeIds.length,
+      vocab: probeVocab,
+      ids: probeIds,
+      decode: probeDecode,
+      topK: 5,
+    });
+
+  const tokens = scorable();
+  check('the first token has no surprisal', tokens[0].bits === 0, `${tokens[0].bits}`);
+  check('a predicted token costs almost nothing', tokens[1].bits < 0.01, `${tokens[1].bits.toFixed(4)} bits`);
+  check(
+    'an unexpected token costs a lot',
+    tokens[2].bits > 10,
+    `${tokens[2].bits.toFixed(2)} bits for " C" where the model wanted " D"`,
+  );
+  check(
+    'the surprise is quantified as a gain for the expected token',
+    tokens[2].alternatives[0].text === ' D' && Math.abs(tokens[2].alternatives[0].gain - tokens[2].bits) < 0.01,
+    `" D" would have saved ${tokens[2].alternatives[0].gain.toFixed(2)} bits (p=${tokens[2].alternatives[0].probability.toFixed(3)})`,
+  );
+  check(
+    'alternatives are ranked by probability',
+    tokens[2].alternatives.every(
+      (alternative, index, all) => index === 0 || alternative.probability <= all[index - 1].probability,
+    ),
+  );
+
+  const summary = summarise(tokens, 'A B C D', 'test-model');
+  check(
+    'subword pieces fold into words with exact offsets',
+    summary.offsetsExact && summary.words.length === 4 && summary.words[2].text === ' C',
+    `${summary.words.map((word) => `"${word.text}"`).join(' ')}`,
+  );
+  check('a word carries the expectation for its piece', summary.words[2].expected?.text === 'D', summary.words[2].expected?.text);
+  check(
+    'word and token summaries agree',
+    summary.tokens.length === 3 && summary.meanBits > 3 && summary.maxBits === summary.words[2].bits,
+    `mean ${summary.meanBits.toFixed(2)} bits/token, max ${summary.maxBits.toFixed(2)} bits/word`,
+  );
+
+  // Regression: `Number(undefined)` is NaN, and a NaN k made the ranking loop's
+  // early-out never fire, growing the candidate arrays to the whole vocabulary.
+  console.log('\n  guards:');
+  const nanK = scoreWindow({
+    logits: probeLogits,
+    positions: probeIds.length,
+    vocab: probeVocab,
+    ids: probeIds,
+    decode: probeDecode,
+    topK: Number.NaN,
+  });
+  check(
+    'a NaN topK falls back instead of ranking the whole vocabulary',
+    nanK.every((token) => token.alternatives.length <= 5),
+    `alternatives per token: ${nanK.map((token) => token.alternatives.length).join(', ')}`,
+  );
+  const zeroK = scoreWindow({
+    logits: probeLogits,
+    positions: probeIds.length,
+    vocab: probeVocab,
+    ids: probeIds,
+    decode: probeDecode,
+    topK: 0,
+  });
+  check(
+    'a zero topK still yields one alternative',
+    zeroK.every((token) => token.index === 0 || token.alternatives.length >= 1),
+  );
+  check(
+    'intensity is clamped and scales linearly',
+    surprisalIntensity(0, 10) === 0 &&
+      Math.abs(surprisalIntensity(5, 10) - 0.5) < 1e-9 &&
+      surprisalIntensity(10, 10) === 1 &&
+      surprisalIntensity(999, 10) === 1 &&
+      surprisalIntensity(5, 0) === 0,
   );
 
   console.log(`\n${RULE}\nOverlap & invariants`);

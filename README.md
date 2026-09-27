@@ -31,6 +31,7 @@ npm run dev        # http://localhost:5173
 | `npm run smoke` | Headless checks: runs the pipeline over the sample document, asserts engine invariants, and server-renders the whole app |
 | `npm run ui-check` | Drives your installed Chrome/Edge (via `playwright-core`, no browser download) against a running dev server to verify divider dragging, pane sizing, topbar height and that the page is actually styled. Needs `npm run dev` in another shell. |
 | `npm run corpus:norms` | Downloads the CLEAR corpus (if absent) and regenerates `src/core/data/corpus-norms.ts`. Needs no dependencies. |
+| `npm run model` | Starts the local surprisal model on `:5174` (proxied as `/api/model`). Add `-- --score "text"` or `-- --file draft.txt` to score from the terminal. |
 
 ## The mental model
 
@@ -153,6 +154,7 @@ src/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
     metrics.ts      topbar metrics, z-scores + CDF percentiles, Dale–Chall rules
+    surprisal.ts    language-model surprisal: logits → per-word bits, perturbation gains
     heatmap.ts      click-a-metric preview shading (document-relative intensity)
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
     persistence.ts  namespaced localStorage + usePersistentState
@@ -164,8 +166,66 @@ src/
   tools/            one file per extension + index.ts registry
   dev/              headless smoke test and render check
   App.tsx           state, layout, topbar metrics, selection/hover wiring
-scripts/            smoke + ui-check runners, corpus norms generator
+scripts/            smoke + ui-check runners, corpus norms generator, local model server
 ```
+
+## Surprisal (local language model)
+
+`npm run model` starts a **local** process that scores the document with GPT-2 and serves it at
+`/api/model`, which Vite proxies so the app stays same-origin. Nothing leaves the machine: the weights
+download once into `.models/` (gitignored, 125 MB) and every run after that is offline.
+
+Surprisal is `−log₂ P(token | everything before it)` — how many bits the model needed to encode what you
+actually wrote. It is the strongest cheap signal for "where is this hard": human reading times track it
+closely, and it needs no hand-written rules about difficult words.
+
+One forward pass yields both outputs:
+
+| Output | Definition |
+| --- | --- |
+| **Surprisal per word** | summed over the word's subword pieces, since a word's probability is the product of its pieces |
+| **Perturbation gain** | the bits the model's *own* preferred piece would have saved at that position — how obvious an alternative it saw. First-order and local: what the best substitution would gain *here*, not how the rest of the sentence would re-flow |
+
+Both come from the same logits, so the second is free. Worked examples from the sample text:
+
+```
+  bits   word              model expected instead
+ 12.01  " Nevertheless,"   ""        (11.0 bits cheaper) — it wanted the sentence to end
+ 12.81  " spine"           "entire"  ( 7.4 bits cheaper)
+ 11.88  " decode"          "read"    ( 7.5 bits cheaper)
+  1.28  " the"             —
+  0.00  "The"             —          (nothing precedes it)
+```
+
+### Model choice
+
+| Model | ONNX file | Size | Notes |
+| --- | --- | --- | --- |
+| `Xenova/gpt2` (default) | `decoder_model_merged_quantized` | 122 MB | the convention in the surprisal literature; 1024-token context |
+| `Xenova/distilgpt2` | `model_quantized` | 226 MB | smaller, weaker |
+| `Xenova/gpt2-medium` | — | ~350 MB | better expectations, ~3× the compute |
+
+Switch with `MODEL=` / `MODEL_FILE=`. Measured on this machine with native ONNX Runtime:
+
+```
+197-token document    396 ms  (158 ms forward)
+1,198-token document  2.5 s   (two windows)
+```
+
+### How it is wired
+
+- **Native, not WebAssembly.** Running in Node means native ONNX Runtime (several times faster than the
+  browser build), no 122 MB download into your browser cache, and no `onnxruntime-web` in the app bundle.
+  `@huggingface/transformers` is therefore a devDependency — it never enters `dist/`.
+- **One implementation.** `src/core/surprisal.ts` owns the arithmetic (log-softmax, top-k, subword →
+  word folding, quantiles) and has no model in it. The server bundles that file with esbuild, exactly as
+  the corpus generator bundles `metrics.ts`, so the process and the app cannot drift apart.
+- **Documents longer than the context** are scored in 1024-token windows, each borrowing one token of
+  left context so no token is scored as if it opened the document.
+- **Line endings are normalised** to `\n` first: GPT-2 was trained on `\n`, so a Windows `\r` is
+  essentially unmodellable (50+ bits) and would pollute every paragraph break.
+- Requests are serialised (one forward pass at a time) and the model loads once, in the background, at
+  startup.
 
 State lives in `App.tsx` and is deliberately small: `text`, `enabled`, `options`, `tab`,
 `hoverId`, `selectedId`, plus three persisted layout numbers. `text`/`enabled`/`options` are
