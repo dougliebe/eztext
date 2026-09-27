@@ -10,6 +10,7 @@
  *   3. layers inside a segment are ordered widest → narrowest.
  */
 import { runAnalysis } from '../core/engine';
+import { computeMetrics, isFamiliarWord } from '../core/metrics';
 import { SAMPLE_TEXT } from '../sample-text';
 import { tools } from '../tools';
 import type { Tool } from '../core/types';
@@ -38,6 +39,61 @@ function main(): void {
     }
     const sample = annotations.slice(0, 4).map((a) => `${JSON.stringify(a.text)} [${a.start}–${a.end}]`);
     if (sample.length > 0) console.log(`   first: ${sample.join(', ')}`);
+  }
+
+  console.log(`\n${RULE}\nDocument metrics`);
+  const metrics = computeMetrics(SAMPLE_TEXT);
+  const table: Array<[string, string]> = [
+    ['Words', String(metrics.words)],
+    ['Sentences', String(metrics.sentences)],
+    ['Paragraphs', String(metrics.paragraphs)],
+    ['Characters', String(metrics.characters)],
+    ['Words / sentence', metrics.wordsPerSentence.toFixed(1)],
+    ['Chars / word', metrics.charactersPerWord.toFixed(2)],
+    ['% polysyllabic', `${(metrics.polysyllabicShare * 100).toFixed(1)}%`],
+    ['% unfamiliar (Dale-Chall)', `${(metrics.unfamiliarShare * 100).toFixed(1)}%`],
+    ['Syllables / word', metrics.syllablesPerWord.toFixed(2)],
+  ];
+  for (const [label, value] of table) console.log(`  ${label.padEnd(26)} ${value.padStart(8)}`);
+
+  check(
+    'metric counts match the sample document',
+    metrics.words === 163 && metrics.sentences === 11 && metrics.paragraphs === 4 && metrics.characters === 1015,
+    `${metrics.words} words / ${metrics.sentences} sentences / ${metrics.paragraphs} paragraphs / ${metrics.characters} characters`,
+  );
+  check(
+    'counts and ratios are internally consistent',
+    metrics.polysyllables <= metrics.words &&
+      metrics.unfamiliarWords <= metrics.words &&
+      metrics.letters <= metrics.characters &&
+      metrics.wordsPerSentence > 0 &&
+      metrics.charactersPerWord > 1 &&
+      metrics.charactersPerWord < 15 &&
+      metrics.syllablesPerWord > 1 &&
+      metrics.syllablesPerWord < 4 &&
+      metrics.polysyllabicShare > 0 &&
+      metrics.polysyllabicShare < 1 &&
+      metrics.unfamiliarShare > 0 &&
+      metrics.unfamiliarShare < 1,
+  );
+
+  console.log('\n  familiarity rules (Dale-Chall):');
+  const familiarity: Array<[string, boolean]> = [
+    ['stop', true], // on the list
+    ['stops', true], // plural of a listed word
+    ['readers', true], // plural of a listed word
+    ['quicker', true], // comparative
+    ['quickest', true], // superlative
+    ['stopping', true], // listed directly
+    ["stop's", true], // possessive
+    ['afternoon-tea', true], // hyphenated, both halves listed
+    ['zygote', false],
+    ['argument', false], // genuinely absent from the list
+    ['arguments', false], // and its plural stays unfamiliar
+  ];
+  for (const [word, expected] of familiarity) {
+    const actual = isFamiliarWord(word);
+    check(`  ${word} → ${expected ? 'familiar' : 'unfamiliar'}`, actual === expected, actual !== expected ? `got ${actual}` : '');
   }
 
   console.log(`\n${RULE}\nOverlap & invariants`);

@@ -165,9 +165,18 @@ button {
 
 .metrics {
   display: flex;
-  gap: 18px;
+  align-items: stretch;
+  gap: 14px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/* Separates the corpus counts from the per-word / per-sentence ratios. */
+.metrics__rule {
+  width: 1px;
+  align-self: center;
+  height: 24px;
+  background: var(--border);
 }
 
 .metric {
@@ -175,18 +184,20 @@ button {
   flex-direction: column;
   align-items: flex-end;
   line-height: 1.2;
-  min-width: 42px;
+  min-width: 40px;
+  cursor: default;
 }
 
 .metric__label {
-  font-size: 10px;
+  font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .metric__value {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-strong);
@@ -194,6 +205,14 @@ button {
 
 .metric--accent .metric__value {
   color: var(--accent);
+}
+
+.metric--good .metric__value {
+  color: var(--good);
+}
+
+.metric--warn .metric__value {
+  color: var(--warn);
 }
 
 .statusbar {

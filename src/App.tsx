@@ -6,13 +6,12 @@ import { ResultsPane, type TabId } from './components/ResultsPane';
 import { Splitter } from './components/Splitter';
 import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
+import { computeMetrics } from './core/metrics';
 import { usePersistentState } from './core/persistence';
-import { compactNumber, round, splitParagraphs, splitSentences, tokenizeWords } from './core/text';
+import { compactNumber, round } from './core/text';
 import type { ResolvedAnnotation, ToolOptionValue, ToolOptions } from './core/types';
 import { SAMPLE_TEXT } from './sample-text';
 import { getTool, tools } from './tools';
-
-const WORDS_PER_MINUTE = 200;
 
 export default function App() {
   const [text, setText] = usePersistentState('text', SAMPLE_TEXT);
@@ -39,20 +38,11 @@ export default function App() {
     [deferredText, enabled, options],
   );
 
+  const doc = useMemo(() => computeMetrics(deferredText), [deferredText]);
+
   const activeTools = useMemo(() => tools.filter((tool) => isToolEnabled(tool, enabled)), [enabled]);
 
   const counts = useMemo(() => countsByTool(analysis), [analysis]);
-
-  const doc = useMemo(() => {
-    const words = tokenizeWords(deferredText).length;
-    return {
-      words,
-      sentences: splitSentences(deferredText).length,
-      paragraphs: splitParagraphs(deferredText).length,
-      characters: deferredText.length,
-      readMinutes: round(words / WORDS_PER_MINUTE, 0),
-    };
-  }, [deferredText]);
 
   const toggleTool = useCallback(
     (id: string) => {
@@ -136,8 +126,40 @@ export default function App() {
           <Metric label="Sentences" value={compactNumber(doc.sentences)} />
           <Metric label="Paragraphs" value={compactNumber(doc.paragraphs)} />
           <Metric label="Characters" value={compactNumber(doc.characters)} />
-          <Metric label="Read time" value={`${doc.readMinutes} min`} />
+          <Metric label="Read time" value={`${doc.readingMinutes} min`} />
           <Metric label="Annotations" value={compactNumber(analysis.annotations.length)} tone="accent" />
+
+          <span className="metrics__rule" aria-hidden="true" />
+
+          <Metric
+            label="Words / sentence"
+            value={round(doc.wordsPerSentence, 1)}
+            hint="Average sentence length in words."
+            tone={doc.wordsPerSentence > 25 ? 'warn' : undefined}
+          />
+          <Metric
+            label="Chars / word"
+            value={round(doc.charactersPerWord, 2)}
+            hint="Letters and digits per word — punctuation, spaces and apostrophes excluded."
+          />
+          <Metric
+            label="% polysyllabic"
+            value={`${round(doc.polysyllabicShare * 100, 1)}%`}
+            hint="Share of words carrying three or more syllables (estimated from vowel groups)."
+            tone={doc.polysyllabicShare >= 0.2 ? 'warn' : undefined}
+          />
+          <Metric
+            label="% unfamiliar"
+            value={`${round(doc.unfamiliarShare * 100, 1)}%`}
+            hint={`Share of words outside the Dale–Chall list of ~3,000 familiar words, and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words). Below 5% reads as easy; above 10% reads as hard.`}
+            tone={doc.unfamiliarShare >= 0.1 ? 'warn' : doc.unfamiliarShare < 0.05 ? 'good' : undefined}
+          />
+          <Metric
+            label="Syllables / word"
+            value={round(doc.syllablesPerWord, 2)}
+            hint="Average syllables per word, estimated with a vowel-group heuristic."
+            tone={doc.syllablesPerWord >= 1.7 ? 'warn' : undefined}
+          />
         </dl>
       </header>
 
@@ -247,9 +269,19 @@ export default function App() {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: string | number; tone?: 'accent' }) {
+function Metric({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  tone?: 'accent' | 'good' | 'warn';
+  hint?: string;
+}) {
   return (
-    <div className={`metric${tone ? ` metric--${tone}` : ''}`}>
+    <div className={`metric${tone ? ` metric--${tone}` : ''}`} title={hint}>
       <dt className="metric__label">{label}</dt>
       <dd className="metric__value">{value}</dd>
     </div>

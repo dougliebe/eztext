@@ -16,6 +16,13 @@ const checks: Array<[string, boolean]> = [
   ['brand renders', html.includes('eztext')],
   ['toolbar renders every tool', ['Sentences', 'Verbs', 'Repeated words', 'Readability'].every((name) => html.includes(name))],
   ['metrics render', html.includes('Read time') && html.includes('Annotations')],
+  [
+    'language metrics render',
+    ['Words / sentence', 'Chars / word', '% polysyllabic', '% unfamiliar', 'Syllables / word'].every((label) =>
+      html.includes(label),
+    ),
+  ],
+  ['metric tooltips render', html.includes('Dale–Chall list of ~3,000 familiar words')],
   ['preview contains resolved annotations', /data-ann="/.test(html)],
   ['preview contains layer tool ids', /data-tool="/.test(html)],
   ['overlapping layers are nested', (html.match(/data-ann="/g)?.length ?? 0) > 0 && (html.match(/<span class="hl/g)?.length ?? 0) > 3],

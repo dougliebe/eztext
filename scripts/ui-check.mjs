@@ -107,6 +107,27 @@ check('top pane defaults to 62% of the workbench', near(ratioY(initial), 0.62), 
 check('panes fill the workbench exactly', near(initial.topHeight + initial.bottomHeight + 7, initial.workbenchHeight, 1.5),
   `${initial.topHeight.toFixed(1)} + ${initial.bottomHeight.toFixed(1)} + 7 vs ${initial.workbenchHeight.toFixed(1)}`);
 
+// --- 1b. the topbar must not grow into the workbench ---------------------
+const header = await page.evaluate(() => {
+  const labels = [...document.querySelectorAll('.metric__label')].map((node) => node.textContent);
+  return {
+    labels,
+    height: document.querySelector('.topbar').getBoundingClientRect().height,
+    viewport: window.innerHeight,
+  };
+});
+const requiredMetrics = ['Words / sentence', 'Chars / word', '% polysyllabic', '% unfamiliar', 'Syllables / word'];
+check(
+  'topbar shows the language metrics',
+  requiredMetrics.every((label) => header.labels.includes(label)),
+  `${header.labels.length} metrics`,
+);
+check(
+  'topbar does not squeeze the workbench',
+  header.height / header.viewport < 0.15,
+  `${Math.round(header.height)}px of ${header.viewport}px`,
+);
+
 // --- 2. horizontal drag: no reset, moves with the pointer ----------------
 const vertical = await drag('y', [20, 40, 60, 80, 100, 120]);
 const rising = vertical.samples.every((value, index) => index === 0 || value >= vertical.samples[index - 1] - 0.001);

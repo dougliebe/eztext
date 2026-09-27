@@ -30,7 +30,7 @@ npm run dev        # http://localhost:5173
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | Types only |
 | `npm run smoke` | Headless checks: runs the pipeline over the sample document, asserts engine invariants, and server-renders the whole app |
-| `npm run ui-check` | Drives your installed Chrome/Edge (via `playwright-core`, no browser download) against a running dev server to verify divider dragging and pane sizing. Needs `npm run dev` in another shell. |
+| `npm run ui-check` | Drives your installed Chrome/Edge (via `playwright-core`, no browser download) against a running dev server to verify divider dragging, pane sizing and topbar height. Needs `npm run dev` in another shell. |
 
 ## The mental model
 
@@ -149,15 +149,17 @@ src/
   core/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
+    metrics.ts      topbar metrics + Dale–Chall familiarity rules
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
     persistence.ts  namespaced localStorage + usePersistentState
     color.ts        hex → rgba helpers for layer tints
+    data/           vendored word lists (dale-chall.ts)
   components/
     Toolbar, ToolOptionsEditor, InputPane, HighlightView, CoverageStrip,
     ResultsPane, ToolPanel, StatGrid, JsonView, Splitter
   tools/            one file per extension + index.ts registry
   dev/              headless smoke test and render check
-  App.tsx           state, layout, selection/hover wiring
+  App.tsx           state, layout, topbar metrics, selection/hover wiring
 ```
 
 State lives in `App.tsx` and is deliberately small: `text`, `enabled`, `options`, `tab`,
@@ -172,6 +174,44 @@ typing never blocks on analysis.
 - **Click** a result row or coverage block → the preview scrolls to that annotation and the row is
   kept in view. Clicking `JSON` gives you the whole run, ready to copy.
 - **Drag the splitters** (or focus one and use arrow keys) to rebalance input / preview / results.
+
+## Topbar metrics
+
+The topbar always shows eleven numbers, regardless of which tools are enabled. The first group are corpus
+counts; the second are the per-word and per-sentence ratios that readability formulas are built from,
+and they are the ones with hover tooltips explaining the definition.
+
+| Metric | Definition |
+| --- | --- |
+| Words | Word tokens — letters/digits, allowing internal `'` and `-` (`don't`, `well-known` = 1 word) |
+| Sentences | Heuristic sentence splitter; never crosses a blank line |
+| Paragraphs | Blocks of consecutive non-blank lines |
+| Characters | Every character in the document, whitespace included |
+| Read time | `words ÷ 200` |
+| Annotations | Highlights produced by all enabled tools (accent colour) |
+| Words / sentence | `words ÷ sentences` |
+| Chars / word | Letters and digits only — punctuation, spaces and apostrophes excluded. This is the divisor ARI and Coleman–Liau use |
+| % polysyllabic | Share of words with 3+ syllables (estimated from vowel groups) |
+| % unfamiliar | Share of words outside the **Dale–Chall** list of ~3,000 familiar words. Below 5% reads as easy, above 10% as hard |
+| Syllables / word | Estimated with the same vowel-group heuristic |
+
+Thresholds are advisory only and show as colour on the value: words/sentence > 25, % polysyllabic ≥ 20%,
+% unfamiliar ≥ 10%, syllables/word ≥ 1.7.
+
+Everything is computed in `src/core/metrics.ts` — a pure function of the text, deliberately *outside* the
+tool registry so the topbar never depends on which extensions are on.
+
+### About the Dale–Chall list
+
+`src/core/data/dale-chall.ts` vendors the list as data (2,949 entries) so the app keeps zero runtime
+dependencies. The list comes from Dale & Chall's 1948 paper *A Formula for Predicting Readability*, as
+reproduced by the ISC-licensed [`text-readability`](https://www.npmjs.com/package/text-readability)
+package (v1.1.1). Familiarity follows the formula's own rule: a word counts as familiar if it is listed
+**or** is a simple variant of a listed word — plural, possessive, `-ed`, `-ing`, `-er`/`-est`, `-ly`,
+doubled consonants, or a hyphenated compound whose parts are all listed.
+
+The list is deliberately narrow (words known to 80% of fourth-graders), so ordinary adult prose scores
+high: the bundled sample text lands at ~21% unfamiliar. That is the formula working as intended, not a bug.
 
 ## Layout rules
 

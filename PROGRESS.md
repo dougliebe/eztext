@@ -3,6 +3,7 @@
 ## Current status
 - Framework is complete and working: Vite + React + TypeScript SPA with a plugin-shaped tool
   registry, live analysis, overlap-aware highlighting, and a tabbed results pane.
+- Topbar shows 11 always-on document metrics (counts + per-word/per-sentence ratios).
 - Pushed to `origin/main`. `main` == `origin/main`, nothing outstanding.
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
@@ -39,12 +40,25 @@
 - Pushed to GitHub (`dougliebe/eztext`): `9a7bd39` → `c0b44a4` → `27e4498` on `main`, fast-forward.
   Before pushing, the local branch was rebased onto the remote's `c0b44a4`, which the local clone did
   not have (see notes below). Re-verified after the rebase: typecheck, 16/16 smoke, 16/16 render.
+- Topbar metrics (`core/metrics.ts`): the six corpus counts plus Words/sentence, Chars/word,
+  % polysyllabic, % unfamiliar (Dale–Chall) and Syllables/word, in a second visual group behind a
+  divider. Metric values carry advisory colour thresholds and hover tooltips with the exact definition.
+- Vendored the Dale–Chall list as data: `core/data/dale-chall.ts`, 2,949 entries, with the formula's
+  own familiarity rule (plural, possessive, -ed, -ing, -er/-est, -ly, doubled consonants, hyphenated
+  compounds) implemented as candidate-stem lookup in `isFamiliarWord`.
+- Smoke test now reports the metric table and asserts the sample document's counts (163 words / 11
+  sentences / 4 paragraphs / 1,015 characters — matching the UI), ratio sanity, and 11 familiarity
+  cases. `ui-check` guards topbar height (< 15% of viewport) and that the five language metrics render.
 - Removed the per-tool methodology footnotes; `notes` is now reserved for engine-level diagnostics
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
   changed defaults reach existing sessions.
 
 ## Next steps
+- An "unfamiliar words" tool that highlights exactly what `% unfamiliar` counts, reusing
+  `isFamiliarWord` — makes the topbar number explainable and is the obvious companion to it.
+- Surface `% unfamiliar` / polysyllabic share in the Readability tool's stats too (single source of
+  truth in `core/metrics.ts` once the tool stops computing its own).
 - Shareable permalinks (encode text + enabled tools + options into the URL hash), regex101-style.
 - Move analysis off the main thread (Web Worker) + debounce for documents beyond ~100 KB.
 - Filter/highlight only a selection range (use `TextRange` input instead of whole-document runs).
@@ -54,6 +68,15 @@
 - More tools: clauses, adverbs/adjectives, passive voice, sentiment, word-length histogram, dialog.
 
 ## Decisions and notes
+- **Topbar metrics are not a tool**: `core/metrics.ts` is a pure function of the text, called from
+  `App.tsx` independently of the tool registry, so the header never changes when tools are toggled.
+  Metrics are computed inside the same `useDeferredValue` boundary as the analysis.
+- **Dale–Chall data is vendored, not a dependency**: extracted from the ISC-licensed
+  `text-readability` package (v1.1.1), credited in the file header, so the app keeps zero runtime deps.
+  The list is deliberately narrow (80% fourth-grade familiarity): the bundled sample scores ~21%
+  unfamiliar. That is the formula working as intended — thresholds are <5% easy, >10% hard.
+- **Chars/word** counts letters and digits only (punctuation/apostrophes excluded), matching what ARI
+  and Coleman–Liau use as their divisor. Documented in the metric's tooltip.
 - **Stray remote commit (resolved)**: `origin/main` carried `c0b44a4` — a commit appending
   `# migraine_discord_bot` to `README.md` in **UTF-16LE**, mixed with ASCII, which made git treat the
   README as a binary file. That content belongs to a different project. The rebase resolved the
