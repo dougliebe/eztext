@@ -457,6 +457,7 @@ export default function App() {
                 <Inspector
                   selection={selectedAnnotation}
                   scores={freshScores}
+                  modelActive={neededSignals.has('surprisal')}
                   text={deferredText}
                   example={selectedGroupExample}
                   onClose={() => setSelectedId(null)}

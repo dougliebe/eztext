@@ -7,6 +7,13 @@ interface InspectorProps {
   selection: ResolvedAnnotation | null;
   /** Live model scores, for the alternatives; absent when the text is unscored. */
   scores: SurprisalScores | null;
+  /**
+   * Whether an active tool is asking for model scores. The model's output — the
+   * word's own bits, the continuation table — is only shown when it is, so
+   * turning the Surprisal tool off turns off everything it draws here, even for
+   * a selection from another tool that happens to start at a scored offset.
+   */
+  modelActive: boolean;
   text: string;
   /** Canonical before → after example for the selected annotation's group. */
   example?: string;
@@ -20,13 +27,22 @@ interface InspectorProps {
  * beneath it. When the selected range is a scored word it shows the whole
  * distribution the model had at that position — the point of the surprisal tool
  * is not the number, it is *what else the word could have been*.
+ *
+ * The model sections belong to the Surprisal tool and appear only while it is
+ * active. Selecting a readability word that happens to sit at a scored offset
+ * shows the readability detail, not the model's answer about a word the reader
+ * is not currently being shown.
  */
-export function Inspector({ selection, scores, text, example, onClose }: InspectorProps) {
+export function Inspector({ selection, scores, modelActive, text, example, onClose }: InspectorProps) {
   // Before the early return: hooks cannot come and go with the selection.
-  const continuations = useContinuation(text, selection, scores !== null);
+  const continuations = useContinuation(text, selection, modelActive && scores !== null);
   if (!selection) return null;
 
-  const word = scores?.words.find((candidate) => candidate.start === selection.start) ?? null;
+  // Scores describe the *text*, so the lookup by offset would also match a word
+  // selected by another tool; `modelActive` keeps that tool's output out.
+  const word = modelActive
+    ? scores?.words.find((candidate) => candidate.start === selection.start) ?? null
+    : null;
   const bits = typeof selection.data?.bits === 'number' ? selection.data.bits : null;
   const suggestions = readSuggestions(selection.data);
 
@@ -97,12 +113,14 @@ export function Inspector({ selection, scores, text, example, onClose }: Inspect
         </p>
       )}
 
-      <Continuations
-        rows={continuations.rows}
-        pending={continuations.pending}
-        enabled={scores !== null}
-        written={selection.text.trim()}
-      />
+      {modelActive && (
+        <Continuations
+          rows={continuations.rows}
+          pending={continuations.pending}
+          enabled={scores !== null}
+          written={selection.text.trim()}
+        />
+      )}
 
       {suggestions.length > 0 && <Suggestions items={suggestions} />}
     </section>

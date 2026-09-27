@@ -180,6 +180,11 @@
   assertion all went with them.
 - Selecting is a **toggle**: clicking whatever is already selected clears the inspector, in the preview
   and in the coverage strip alike.
+- **The inspector shows tool output only while its tool is active**: the word stats and “where the model
+  goes next” table belong to Surprisal, so selecting a readability word that happens to start at a scored
+  offset now shows the readability detail instead of the model's answer about a word the reader is not
+  being shown. Gated by a `modelActive` prop (an active tool requiring the surprisal signal) rather than
+  by the scores merely existing, so a stale run cannot leak model output into a Surprisal-free workbench.
 - Verified the Dale-Chall work that landed in parallel still functions against the stats-only panels
   (7 stats each, 0 row lists) and that its selection card still appears.
 - **Where the model goes next**: the inspector's ranked next-token table is replaced by five five-word
