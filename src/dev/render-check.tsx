@@ -9,6 +9,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import App from '../App';
+import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 
 const html = renderToStaticMarkup(createElement(App));
 
@@ -23,6 +24,10 @@ const checks: Array<[string, boolean]> = [
     ),
   ],
   ['metric tooltips render', html.includes('Dale–Chall list of ~3,000 familiar words')],
+  [
+    'corpus deviations render',
+    html.includes('\u03C3') && html.includes(CLEAR_CORPUS.name) && html.includes(`n=${CLEAR_CORPUS.n.toLocaleString('en-US')}`),
+  ],
   ['preview contains resolved annotations', /data-ann="/.test(html)],
   ['preview contains layer tool ids', /data-tool="/.test(html)],
   ['overlapping layers are nested', (html.match(/data-ann="/g)?.length ?? 0) > 0 && (html.match(/<span class="hl/g)?.length ?? 0) > 3],

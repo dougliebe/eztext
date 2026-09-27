@@ -166,7 +166,7 @@ button {
 .metrics {
   display: flex;
   align-items: stretch;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -197,10 +197,33 @@ button {
 }
 
 .metric__value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   font-size: 13.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-strong);
+}
+
+/* Deviation from the CLEAR corpus mean, e.g. −0.7σ */
+.metric__sigma {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted);
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.metric--good .metric__sigma {
+  color: var(--good);
+  opacity: 1;
+}
+
+.metric--warn .metric__sigma {
+  color: var(--warn);
+  opacity: 1;
 }
 
 .metric--accent .metric__value {

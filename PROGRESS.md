@@ -3,7 +3,8 @@
 ## Current status
 - Framework is complete and working: Vite + React + TypeScript SPA with a plugin-shaped tool
   registry, live analysis, overlap-aware highlighting, and a tabbed results pane.
-- Topbar shows 11 always-on document metrics (counts + per-word/per-sentence ratios).
+- Topbar shows 11 always-on document metrics; the five ratios are shown as a deviation from the CLEAR
+  corpus mean (`+1.4σ`) rather than against hardcoded thresholds.
 - Pushed to `origin/main`. `main` == `origin/main`, nothing outstanding.
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
@@ -49,6 +50,17 @@
 - Smoke test now reports the metric table and asserts the sample document's counts (163 words / 11
   sentences / 4 paragraphs / 1,015 characters — matching the UI), ratio sanity, and 11 familiarity
   cases. `ui-check` guards topbar height (< 15% of viewport) and that the five language metrics render.
+- **Corpus norms** (`npm run corpus:norms` → `core/data/corpus-norms.ts`): mean and SD of each ratio
+  across 4,724 CLEAR excerpts, so the topbar can show `±σ` versus real published prose. The generator
+  reads the xlsx with no dependency, finds the `Excerpt` column by header text, and computes metrics by
+  bundling `core/metrics.ts` itself — norms cannot drift from the implementation.
+- Replaced the invented thresholds (words/sentence > 25, % unfamiliar > 10%, …) with corpus-relative
+  tone at ±1.5σ. The old % unfamiliar rule was badly wrong: the corpus averages 17.6% unfamiliar, so
+  it fired on nearly everything. The bundled sample is only `+0.3σ` on that metric.
+- Guarded comparisons below 20 words (`MIN_COMPARABLE_WORDS`) — ratios and z-scores are meaningless on
+  tiny inputs, so no σ chips render.
+- `ui-check` now fails loudly if the page renders unstyled, instead of reporting a layout catastrophe
+  (see the dev-server note below — it happened a third time and cost real debugging time).
 - Removed the per-tool methodology footnotes; `notes` is now reserved for engine-level diagnostics
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
@@ -57,6 +69,11 @@
 ## Next steps
 - An "unfamiliar words" tool that highlights exactly what `% unfamiliar` counts, reusing
   `isFamiliarWord` — makes the topbar number explainable and is the obvious companion to it.
+- Cross-validate our metrics against the corpus's own columns (`Flesch-Reading-Ease`,
+  `Flesch-Kincaid-Grade-Level`, `New Dale-Chall Readability Formula`): the xlsx already carries them, so
+  the generator could report correlations and expose any weakness in the syllable heuristic.
+- Show the corpus percentile as well as σ (a `+1.4σ` on chars/word is the 92nd percentile — more
+  intuitive for some readers).
 - Surface `% unfamiliar` / polysyllabic share in the Readability tool's stats too (single source of
   truth in `core/metrics.ts` once the tool stops computing its own).
 - Shareable permalinks (encode text + enabled tools + options into the URL hash), regex101-style.
@@ -105,10 +122,20 @@
 - **UI verification**: `scripts/ui-check.mjs` drives the installed Chrome through `playwright-core`
   (tiny dependency, no ~100 MB browser download) and reads geometry straight from the DOM, so it
   cannot be fooled by app state. Verified to fail on the pre-fix layout and pass after.
+- **Norms are corpus-relative, thresholds are not invented**: a fixed "% unfamiliar > 10% is hard"
+  rule was silently wrong once measured — the CLEAR corpus averages 17.6%. Deviations are now ±σ against
+  a real population, with colour only past ±1.5σ. All five ratios are "higher = harder", which is what
+  lets a single signed rule drive the tone.
+- **CLEAR corpus is CC BY-NC-SA 4.0** (non-commercial, share-alike, attribution). Only aggregate
+  statistics are committed — never corpus text — and the generated file states the licence. If eztext is
+  ever commercialised, this needs a licence review or a different reference corpus.
+- **Corpus data stays out of the repo**: `.corpus/` is gitignored, the generator re-downloads on demand,
+  and the app itself only ever reads the small generated norms module.
 - **Dev-server gotcha**: Vite on Windows can cache a 0-byte transform for a module whose file was
-  replaced rather than edited (`git checkout`, shell redirects, atomic-save editors). Symptom is a
-  blank page with the module serving `Content-Length: 0`. Mitigated with `awaitWriteFinish`; if it
-  recurs, restart the dev server or delete `node_modules/.vite`.
+  replaced rather than edited (`git checkout`, shell redirects, atomic-save editors). Symptom is a blank
+  page, or a page rendered *unstyled* when it hits `styles.css` (`const __vite__css = ""`). Mitigated
+  with `awaitWriteFinish` plus `watch.ignored` for `.tmp/`, `.corpus/`, `dist/`; `ui-check` now detects
+  it. If it recurs: restart the dev server (`rm -rf node_modules/.vite` first if it exits with EPERM).
 - Heuristic (not statistical) NLP: english lexicon + morphology for verbs, vowel-group syllable
   estimate. Tools state their limits through each annotation's `detail` field, not through footnotes.
 

@@ -6,7 +6,8 @@ import { ResultsPane, type TabId } from './components/ResultsPane';
 import { Splitter } from './components/Splitter';
 import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
-import { computeMetrics } from './core/metrics';
+import { computeMetrics, describeNorm, formatSigma, MIN_COMPARABLE_WORDS, zScore } from './core/metrics';
+import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
 import { usePersistentState } from './core/persistence';
 import { compactNumber, round } from './core/text';
 import type { ResolvedAnnotation, ToolOptionValue, ToolOptions } from './core/types';
@@ -43,6 +44,15 @@ export default function App() {
   const activeTools = useMemo(() => tools.filter((tool) => isToolEnabled(tool, enabled)), [enabled]);
 
   const counts = useMemo(() => countsByTool(analysis), [analysis]);
+
+  /**
+   * Corpus comparison, suppressed while the document is too short for the
+   * ratios to mean anything (mirrors the generator's cut-off).
+   */
+  const deviation = useCallback(
+    (raw: number, norm: MetricNorm) => (doc.words >= MIN_COMPARABLE_WORDS ? { raw, norm } : null),
+    [doc.words],
+  );
 
   const toggleTool = useCallback(
     (id: string) => {
@@ -135,30 +145,33 @@ export default function App() {
             label="Words / sentence"
             value={round(doc.wordsPerSentence, 1)}
             hint="Average sentence length in words."
-            tone={doc.wordsPerSentence > 25 ? 'warn' : undefined}
+            deviation={deviation(doc.wordsPerSentence, CLEAR_CORPUS.metrics.wordsPerSentence)}
           />
           <Metric
             label="Chars / word"
             value={round(doc.charactersPerWord, 2)}
             hint="Letters and digits per word — punctuation, spaces and apostrophes excluded."
+            deviation={deviation(doc.charactersPerWord, CLEAR_CORPUS.metrics.charactersPerWord)}
           />
           <Metric
             label="% polysyllabic"
             value={`${round(doc.polysyllabicShare * 100, 1)}%`}
             hint="Share of words carrying three or more syllables (estimated from vowel groups)."
-            tone={doc.polysyllabicShare >= 0.2 ? 'warn' : undefined}
+            percent
+            deviation={deviation(doc.polysyllabicShare, CLEAR_CORPUS.metrics.polysyllabicShare)}
           />
           <Metric
             label="% unfamiliar"
             value={`${round(doc.unfamiliarShare * 100, 1)}%`}
-            hint={`Share of words outside the Dale–Chall list of ~3,000 familiar words, and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words). Below 5% reads as easy; above 10% reads as hard.`}
-            tone={doc.unfamiliarShare >= 0.1 ? 'warn' : doc.unfamiliarShare < 0.05 ? 'good' : undefined}
+            hint={`Share of words outside the Dale–Chall list of ~3,000 familiar words, and not a simple variant of one (${doc.unfamiliarWords} of ${doc.words} words).`}
+            percent
+            deviation={deviation(doc.unfamiliarShare, CLEAR_CORPUS.metrics.unfamiliarShare)}
           />
           <Metric
             label="Syllables / word"
             value={round(doc.syllablesPerWord, 2)}
             hint="Average syllables per word, estimated with a vowel-group heuristic."
-            tone={doc.syllablesPerWord >= 1.7 ? 'warn' : undefined}
+            deviation={deviation(doc.syllablesPerWord, CLEAR_CORPUS.metrics.syllablesPerWord)}
           />
         </dl>
       </header>
@@ -274,16 +287,41 @@ function Metric({
   value,
   tone,
   hint,
+  deviation,
+  percent,
 }: {
   label: string;
   value: string | number;
   tone?: 'accent' | 'good' | 'warn';
   hint?: string;
+  /** The raw value plus the corpus norm to compare it against. */
+  deviation?: { raw: number; norm: MetricNorm } | null;
+  /** Format the norm as a percentage rather than a plain number. */
+  percent?: boolean;
 }) {
+  const z = deviation ? zScore(deviation.raw, deviation.norm) : null;
+
+  // Tone comes from the corpus comparison, not a hardcoded threshold: the CLEAR
+  // corpus averages ~17.6% unfamiliar words, so an absolute "over 10% is hard"
+  // rule would fire on nearly every text.
+  const resolvedTone = tone ?? (z === null ? undefined : z >= 1.5 ? 'warn' : z <= -1.5 ? 'good' : undefined);
+
+  const title = [
+    hint,
+    deviation && z !== null
+      ? `${CLEAR_CORPUS.name}: ${describeNorm(deviation.norm, percent)} → ${formatSigma(z)}, ${z >= 0 ? 'more difficult' : 'easier'} than the average excerpt.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
   return (
-    <div className={`metric${tone ? ` metric--${tone}` : ''}`} title={hint}>
+    <div className={`metric${resolvedTone ? ` metric--${resolvedTone}` : ''}`} title={title || undefined}>
       <dt className="metric__label">{label}</dt>
-      <dd className="metric__value">{value}</dd>
+      <dd className="metric__value">
+        {value}
+        {z !== null && <span className="metric__sigma">{formatSigma(z)}</span>}
+      </dd>
     </div>
   );
 }

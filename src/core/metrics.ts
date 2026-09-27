@@ -10,6 +10,7 @@
  * keystroke alongside the analysis pipeline.
  */
 import { DALE_CHALL_WORDS } from './data/dale-chall';
+import { CLEAR_CORPUS, type MetricNorm } from './data/corpus-norms';
 import { countSyllables, splitParagraphs, splitSentences, tokenizeWords } from './text';
 
 /** Words with at least this many syllables are "polysyllabic". */
@@ -17,6 +18,39 @@ export const POLYSYLLABLE_THRESHOLD = 3;
 
 /** Used for the reading-time estimate. */
 export const WORDS_PER_MINUTE = 200;
+
+/**
+ * Below this word count the ratios are too noisy to compare against corpus
+ * norms. The norms generator skips excerpts this short, so the two stay
+ * consistent.
+ */
+export const MIN_COMPARABLE_WORDS = 20;
+
+/**
+ * How many standard deviations a value sits from the CLEAR corpus mean.
+ * Returns `null` when the comparison is meaningless (no spread in the norm).
+ *
+ * All five normative metrics point the same way — higher means harder to read —
+ * so a positive z is always "more difficult than the average excerpt".
+ */
+export function zScore(value: number, norm: MetricNorm): number | null {
+  if (!Number.isFinite(value) || !Number.isFinite(norm.mean) || !(norm.sd > 0)) return null;
+  return (value - norm.mean) / norm.sd;
+}
+
+/** Format a z-score for display: `+1.4σ`, `−0.7σ`, `±0σ`. */
+export function formatSigma(z: number): string {
+  const magnitude = Math.abs(z).toFixed(1);
+  if (magnitude === '0.0') return '\u00B10\u03C3';
+  return (z > 0 ? '+' : '\u2212') + magnitude + '\u03C3';
+}
+
+/** Corpus context line for a metric tooltip, e.g. `21.3 ± 9.2 (n=4,724)`. */
+export function describeNorm(norm: MetricNorm, percent = false): string {
+  const format = (value: number) =>
+    percent ? `${(value * 100).toFixed(1)}%` : value.toFixed(2);
+  return `${format(norm.mean)} \u00B1 ${format(norm.sd)} (n=${CLEAR_CORPUS.n.toLocaleString('en-US')})`;
+}
 
 export interface DocumentMetrics {
   /* Counts (integers) */

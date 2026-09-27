@@ -7,8 +7,7 @@ Type or paste text at the top, toggle tools in the toolbar, and read the results
 ```
 ┌─ topbar ──────────────── document metrics ─────────────────────────────┐
 ├─ toolbar ── [Structure] Sentences · Verbs   [Readability] Readability ──┤
-│                          ⚙ opens that tool's settings                  │
-├─ input (editable) ───────────┬─ preview (annotated, hoverable) ─────────┤
+│                          ⚙ opens that tool's settings                  │├─ input (editable) ───────────┬─ preview (annotated, hoverable) ─────────┤
 │                              │  tint + stacked underlines per layer    │
 │                              ├─ coverage strip: one track per tool ────┤
 ├────────────── draggable splitter ──────────────────────────────────────┤
@@ -30,7 +29,8 @@ npm run dev        # http://localhost:5173
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | Types only |
 | `npm run smoke` | Headless checks: runs the pipeline over the sample document, asserts engine invariants, and server-renders the whole app |
-| `npm run ui-check` | Drives your installed Chrome/Edge (via `playwright-core`, no browser download) against a running dev server to verify divider dragging, pane sizing and topbar height. Needs `npm run dev` in another shell. |
+| `npm run ui-check` | Drives your installed Chrome/Edge (via `playwright-core`, no browser download) against a running dev server to verify divider dragging, pane sizing, topbar height and that the page is actually styled. Needs `npm run dev` in another shell. |
+| `npm run corpus:norms` | Downloads the CLEAR corpus (if absent) and regenerates `src/core/data/corpus-norms.ts`. Needs no dependencies. |
 
 ## The mental model
 
@@ -149,17 +149,18 @@ src/
   core/
     types.ts        Tool, AnnotationDraft, Annotation, Segment, Stat, Note, ToolOption
     engine.ts       runAnalysis, sweep-line overlap resolution, option resolution
-    metrics.ts      topbar metrics + Dale–Chall familiarity rules
+    metrics.ts      topbar metrics, z-scores, Dale–Chall familiarity rules
     text.ts         tokenizers (words/sentences/paragraphs), syllables, formatting
     persistence.ts  namespaced localStorage + usePersistentState
     color.ts        hex → rgba helpers for layer tints
-    data/           vendored word lists (dale-chall.ts)
+    data/           vendored data: dale-chall.ts, corpus-norms.ts (generated)
   components/
     Toolbar, ToolOptionsEditor, InputPane, HighlightView, CoverageStrip,
     ResultsPane, ToolPanel, StatGrid, JsonView, Splitter
   tools/            one file per extension + index.ts registry
   dev/              headless smoke test and render check
   App.tsx           state, layout, topbar metrics, selection/hover wiring
+scripts/            smoke + ui-check runners, corpus norms generator
 ```
 
 State lives in `App.tsx` and is deliberately small: `text`, `enabled`, `options`, `tab`,
@@ -195,11 +196,48 @@ and they are the ones with hover tooltips explaining the definition.
 | % unfamiliar | Share of words outside the **Dale–Chall** list of ~3,000 familiar words. Below 5% reads as easy, above 10% as hard |
 | Syllables / word | Estimated with the same vowel-group heuristic |
 
-Thresholds are advisory only and show as colour on the value: words/sentence > 25, % polysyllabic ≥ 20%,
-% unfamiliar ≥ 10%, syllables/word ≥ 1.7.
+Thresholds are corpus-relative, not invented: each of the five ratios is shown with its deviation from the
+**CLEAR corpus** mean (`+1.4σ`), and colour appears only at ±1.5σ. All five metrics point the same way —
+higher means harder to read — so a positive σ is always "more difficult than the average excerpt".
+
+Hovering a metric shows the definition plus the comparison, e.g.
+`CLEAR corpus: 21.28 ± 9.23 (n=4,724) → −0.7σ, easier than the average excerpt.` Comparisons are
+suppressed entirely below 20 words, where the ratios are meaningless.
 
 Everything is computed in `src/core/metrics.ts` — a pure function of the text, deliberately *outside* the
 tool registry so the topbar never depends on which extensions are on.
+
+### About the CLEAR corpus norms
+
+`src/core/data/corpus-norms.ts` holds the mean and standard deviation of each ratio across the
+[CLEAR](https://github.com/scrosseye/CLEAR-Corpus) corpus (CommonLit Ease of Readability;
+Crossley, Heintz, Choi, Batchelor, Karimi & Malatinszky 2021/2022). Regenerate with:
+
+```bash
+npm run corpus:norms     # downloads the corpus to .corpus/, rewrites the norms module
+```
+
+The generator reads the xlsx directly (a zip of XML — no dependency), finds the `Excerpt` column *by
+header text* rather than by letter, and computes every metric by bundling and running `core/metrics.ts`
+itself, so the norms can never drift from the implementation.
+
+```
+4724 excerpts   words/excerpt 173.8 ± 17.1
+Words / sentence  21.2829 ± 9.2330
+Chars / word       4.4419 ± 0.4345
+% polysyllabic     0.0958 ± 0.0600     (9.6% ± 6.0%)
+% unfamiliar       0.1757 ± 0.0990     (17.6% ± 9.9%)
+Syllables / word   1.4147 ± 0.1649
+```
+
+Two things this makes obvious. First, the corpus averages **17.6% unfamiliar** words, so an absolute
+"over 10% is hard" rule (which this README previously suggested) fires on nearly everything — the
+bundled sample sits at a perfectly average `+0.3σ`. Second, CLEAR excerpts are a fixed ~174 words, so
+comparing raw counts against them would be meaningless; only length-normalised ratios are recorded.
+
+**Licence:** the corpus is **CC BY-NC-SA 4.0** — non-commercial, share-alike, attribution required. Only
+aggregate statistics are committed here, never the corpus text, and the generated file carries the
+attribution. If eztext is ever used commercially, these norms need a licence review or a corpus swap.
 
 ### About the Dale–Chall list
 

@@ -101,6 +101,31 @@ console.log(`\neztext layout check — ${baseUrl}\n${'─'.repeat(78)}`);
 await page.goto(baseUrl, { waitUntil: 'networkidle' });
 await page.waitForSelector('.workbench__top');
 
+// --- 0. the page must actually be styled ---------------------------------
+// A stale dev-server transform can serve `const __vite__css = ""`, which looks
+// like a layout catastrophe rather than a missing stylesheet. Fail loudly here.
+const styling = await page.evaluate(() => {
+  const app = document.querySelector('.app');
+  const chip = document.querySelector('.chip');
+  return {
+    sheets: document.styleSheets.length,
+    chipRadius: chip ? getComputedStyle(chip).borderRadius : '0px',
+    metricValueDisplay: getComputedStyle(document.querySelector('.metric__value')).display,
+    appHeight: Math.round(app.getBoundingClientRect().height),
+    viewport: window.innerHeight,
+  };
+});
+check(
+  'stylesheet is applied',
+  styling.sheets > 0 && styling.chipRadius !== '0px' && styling.metricValueDisplay === 'flex',
+  `${styling.sheets} sheet(s), chip radius ${styling.chipRadius}, metric value ${styling.metricValueDisplay}`,
+);
+check(
+  'page is not rendering unstyled',
+  styling.appHeight <= styling.viewport + 1,
+  `app is ${styling.appHeight}px in a ${styling.viewport}px viewport`,
+);
+
 // --- 1. the default still matches the intended 62% -----------------------
 const initial = await layout();
 check('top pane defaults to 62% of the workbench', near(ratioY(initial), 0.62), pct(ratioY(initial)));

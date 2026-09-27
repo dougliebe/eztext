@@ -10,7 +10,14 @@
  *   3. layers inside a segment are ordered widest → narrowest.
  */
 import { runAnalysis } from '../core/engine';
-import { computeMetrics, isFamiliarWord } from '../core/metrics';
+import {
+  computeMetrics,
+  formatSigma,
+  isFamiliarWord,
+  MIN_COMPARABLE_WORDS,
+  zScore,
+} from '../core/metrics';
+import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 import { SAMPLE_TEXT } from '../sample-text';
 import { tools } from '../tools';
 import type { Tool } from '../core/types';
@@ -95,6 +102,66 @@ function main(): void {
     const actual = isFamiliarWord(word);
     check(`  ${word} → ${expected ? 'familiar' : 'unfamiliar'}`, actual === expected, actual !== expected ? `got ${actual}` : '');
   }
+
+  console.log(`\n${RULE}\nCorpus comparison — ${CLEAR_CORPUS.name}, n=${CLEAR_CORPUS.n}`);
+  const comparisons: Array<[string, number, keyof typeof CLEAR_CORPUS.metrics]> = [
+    ['Words / sentence', metrics.wordsPerSentence, 'wordsPerSentence'],
+    ['Chars / word', metrics.charactersPerWord, 'charactersPerWord'],
+    ['% polysyllabic', metrics.polysyllabicShare, 'polysyllabicShare'],
+    ['% unfamiliar', metrics.unfamiliarShare, 'unfamiliarShare'],
+    ['Syllables / word', metrics.syllablesPerWord, 'syllablesPerWord'],
+  ];
+  for (const [label, value, key] of comparisons) {
+    const norm = CLEAR_CORPUS.metrics[key];
+    const z = zScore(value, norm);
+    console.log(
+      `  ${label.padEnd(18)} ${value.toFixed(3).padStart(7)}  norm ${norm.mean.toFixed(4)} ± ${norm.sd.toFixed(4)}  ${z === null ? 'n/a' : formatSigma(z).padStart(7)}`,
+    );
+  }
+
+  const normValues = Object.entries(CLEAR_CORPUS.metrics);
+  check(
+    'corpus norms are populated and plausible',
+    CLEAR_CORPUS.n > 4000 &&
+      normValues.every(([, norm]) => norm.sd > 0 && Number.isFinite(norm.mean)) &&
+      CLEAR_CORPUS.metrics.wordsPerSentence.mean > 10 &&
+      CLEAR_CORPUS.metrics.wordsPerSentence.mean < 30 &&
+      CLEAR_CORPUS.metrics.charactersPerWord.mean > 3 &&
+      CLEAR_CORPUS.metrics.charactersPerWord.mean < 6 &&
+      CLEAR_CORPUS.metrics.polysyllabicShare.mean > 0 &&
+      CLEAR_CORPUS.metrics.polysyllabicShare.mean < 1 &&
+      CLEAR_CORPUS.metrics.unfamiliarShare.mean > 0 &&
+      CLEAR_CORPUS.metrics.unfamiliarShare.mean < 1 &&
+      CLEAR_CORPUS.metrics.syllablesPerWord.mean > 1 &&
+      CLEAR_CORPUS.metrics.syllablesPerWord.mean < 2,
+    `${normValues.length} metrics with spread`,
+  );
+  check('corpus covers real prose', CLEAR_CORPUS.wordsPerExcerpt.mean > 150 && CLEAR_CORPUS.wordsPerExcerpt.mean < 200,
+    `${CLEAR_CORPUS.wordsPerExcerpt.mean} words per excerpt ± ${CLEAR_CORPUS.wordsPerExcerpt.sd}`);
+
+  const sampleZs = comparisons.map(([, value, key]) => zScore(value, CLEAR_CORPUS.metrics[key])!);
+  check('every sample deviation is finite and unremarkable', sampleZs.every((z) => Number.isFinite(z) && Math.abs(z) < 5),
+    sampleZs.map((z) => formatSigma(z)).join(' '));
+  check(
+    'sample sentences are shorter than the corpus average',
+    sampleZs[0] < 0,
+    `${formatSigma(sampleZs[0])} on words/sentence`,
+  );
+  check(
+    'sample words are longer than the corpus average',
+    sampleZs[1] > 0,
+    `${formatSigma(sampleZs[1])} on chars/word`,
+  );
+
+  console.log('\n  z-score formatting:');
+  check('  +1.42 → +1.4σ', formatSigma(1.42) === '+1.4\u03C3', formatSigma(1.42));
+  check('  −0.7 → −0.7σ', formatSigma(-0.7) === '\u22120.7\u03C3', formatSigma(-0.7));
+  check('  0 → ±0σ', formatSigma(0) === '\u00B10\u03C3', formatSigma(0));
+  check(
+    '  short documents are excluded from comparison',
+    MIN_COMPARABLE_WORDS === 20 && computeMetrics('Too short.').words < MIN_COMPARABLE_WORDS,
+    `cut-off ${MIN_COMPARABLE_WORDS} words`,
+  );
 
   console.log(`\n${RULE}\nOverlap & invariants`);
   const distinctLayerCounts = new Map<number, number>();
