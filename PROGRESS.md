@@ -9,7 +9,11 @@
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
 ## In progress
-- Nothing.
+- **GSDS tool** (`feat/gsds-tool`, worktree `D:/ANALYTICS/eztext-gsds`): formula verified against the
+  primary documents (ED091741 worked example reproduces 42.62 → SDS 2.7 exactly). Extraction audit in
+  `docs/gsds-feasibility.md`: 5/10 variables are deterministic token/orthographic counts, 4/10 share one
+  clause-segmentation dependency, gerunds/participles/absolutes are a documented proxy. No code yet —
+  three decisions (V6 be/have mode, sample-length handling, V10) are listed at the end of the doc.
 
 ## Completed
 - Project scaffold: Vite 5, React 18, strict TS, dark-theme design tokens, `dev`/`build`/`preview`/`typecheck`/`smoke` scripts.
@@ -119,6 +123,8 @@
   bars, bits, bits saved) and which of them was the word actually written.
 
 ## Next steps
+- GSDS tool: build Stage 1 (Tier A variables + T-unit splitter) once the three decisions in
+  `docs/gsds-feasibility.md` are settled.
 - Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded
   word) — the data is already in the tool's annotations as `data.gain`.
 - Surprisal windows arrive all at once; streaming them per window would give progress on long documents.
@@ -200,4 +206,4 @@
 - Heuristic (not statistical) NLP: english lexicon + morphology for verbs, vowel-group syllable
   estimate. Tools state their limits through each annotation's `detail` field, not through footnotes.
 
-_Last updated: 2025-07-26_
+_Last updated: 2026-09-27_
