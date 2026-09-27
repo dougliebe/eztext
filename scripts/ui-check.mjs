@@ -138,6 +138,15 @@ const header = await page.evaluate(() => {
   return {
     labels,
     percentileChips: [...document.querySelectorAll('.metric__chip')].map((node) => node.textContent),
+    chipColours: Object.fromEntries(
+      [...document.querySelectorAll('.metric--clickable')].map((metric) => [
+        metric.querySelector('.metric__label').textContent,
+        {
+          percentile: Number(metric.querySelector('.metric__chip').dataset.percentile),
+          rgb: (getComputedStyle(metric.querySelector('.metric__chip')).color.match(/[\d.]+/g) ?? []).map(Number),
+        },
+      ]),
+    ),
     height: document.querySelector('.topbar').getBoundingClientRect().height,
     viewport: window.innerHeight,
   };
@@ -153,6 +162,17 @@ check(
   header.percentileChips.length === requiredMetrics.length &&
     header.percentileChips.every((chip) => /^(<1st|>99th|\d+(st|nd|rd|th))$/.test(chip)),
   header.percentileChips.join(' '),
+);
+// The chip's font colour must follow the ramp: the harder percentile is warmer.
+const coolChip = header.chipColours['Words / sentence']; // 22nd on the sample
+const warmChip = header.chipColours['Chars / word']; // 91st on the sample
+check(
+  'chip font colour is coded by percentile',
+  coolChip.percentile < 50 &&
+    warmChip.percentile > 50 &&
+    coolChip.rgb[1] > coolChip.rgb[0] &&
+    warmChip.rgb[0] > warmChip.rgb[1],
+  `p${coolChip.percentile} green-dominant, p${warmChip.percentile} red-dominant`,
 );
 check(
   'topbar does not squeeze the workbench',
@@ -319,6 +339,7 @@ const chipsFor = async (document) => {
     [...document.querySelectorAll('.metric--clickable')].map((metric) => ({
       label: metric.querySelector('.metric__label').textContent,
       chip: metric.querySelector('.metric__chip')?.textContent ?? null,
+      rgb: (getComputedStyle(metric.querySelector('.metric__chip')).color.match(/[\d.]+/g) ?? []).map(Number),
       tone: metric.classList.contains('metric--warn')
         ? 'warn'
         : metric.classList.contains('metric--good')
@@ -336,6 +357,11 @@ check(
   'very long words push chars/word into the amber band',
   heavyChars.tone === 'warn',
   `${heavyChars.chip} (${heavyChars.tone})`,
+);
+check(
+  'extreme percentiles saturate the chip colour',
+  heavyChars.rgb[0] > heavyChars.rgb[1] + 80,
+  `rgb(${heavyChars.rgb.join(', ')})`,
 );
 
 const simple = await chipsFor(

@@ -31,6 +31,17 @@ export function colorVars(hex: string): Record<string, string> {
   return { '--tool-color': hex, '--tool-color-soft': withAlpha(hex, 0.16) };
 }
 
+/** Blend two hex colours: `t` = 0 returns `a`, `t` = 1 returns `b`. */
+export function mixHex(a: string, b: string, t: number): string {
+  const clamped = Math.max(0, Math.min(1, t));
+  const from = parseHex(a);
+  const to = parseHex(b);
+  const channels = [0, 1, 2].map((channel) =>
+    Math.round(from[channel] + (to[channel] - from[channel]) * clamped),
+  );
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
 /** Cool → hot ramp used by the preview heatmaps. */
 const HEAT_STOPS: Array<[number, string]> = [
   [0, '#3f7fbf'],

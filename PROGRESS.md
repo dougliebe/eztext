@@ -62,6 +62,10 @@
   words/sentence vs mean 21.28).
 - Tone bands moved from ±1.5σ to percentile tails: ≥ p93 amber, ≤ p7 green. On the sample text that
   surfaces `chars/word 91st` (long words) while `% unfamiliar` is an unremarkable `66th`.
+- **Percentile chip fonts are colour-coded** on a continuous ramp (`percentileColor`): neutral grey at
+  p50, cooling to green below, warming through amber to red above, with an exponent so the tint shows up
+  outside the middle band rather than only at the extremes. The box stays neutral except in the tails.
+  Pure colour maths lives in `core/color.ts` (`mixHex`), the semantic ramp in `core/metrics.ts`.
 - Guarded comparisons below 20 words (`MIN_COMPARABLE_WORDS`) — ratios and z-scores are meaningless on
   tiny inputs, so no σ chips render.
 - `ui-check` now fails loudly if the page renders unstyled, instead of reporting a layout catastrophe

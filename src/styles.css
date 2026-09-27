@@ -237,7 +237,8 @@ button {
   color: var(--text-strong);
 }
 
-/* Percentile within the CLEAR corpus, e.g. 92nd */
+/* Percentile within the CLEAR corpus, e.g. 92nd — the font colour comes from
+   percentileColor() inline; the box is neutral except in the tails. */
 .metric__chip {
   font-size: 9px;
   font-weight: 650;
@@ -252,13 +253,11 @@ button {
 }
 
 .metric--good .metric__chip {
-  color: var(--good);
   border-color: #56d39a55;
   background: #56d39a1f;
 }
 
 .metric--warn .metric__chip {
-  color: var(--warn);
   border-color: #f0b45c55;
   background: #f0b45c1f;
 }

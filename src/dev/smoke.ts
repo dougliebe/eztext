@@ -18,9 +18,11 @@ import {
   isFamiliarWord,
   MIN_COMPARABLE_WORDS,
   NOTABLE_PERCENTILE,
+  percentileColor,
   percentileOf,
   POLYSYLLABLE_THRESHOLD,
 } from '../core/metrics';
+import { parseHex } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 import { SAMPLE_TEXT } from '../sample-text';
 import { tools } from '../tools';
@@ -212,6 +214,32 @@ function main(): void {
     '  short documents are excluded from comparison',
     MIN_COMPARABLE_WORDS === 20 && computeMetrics('Too short.').words < MIN_COMPARABLE_WORDS,
     `cut-off ${MIN_COMPARABLE_WORDS} words`,
+  );
+
+  console.log('\n  percentile colour ramp:');
+  const channel = (hex: string, index: number) => parseHex(hex)[index];
+  check('  neutral grey at the median', percentileColor(50) === '#8592a3', percentileColor(50));
+  check(
+    '  saturates green at p0 and red at p100',
+    percentileColor(0) === '#56d39a' && percentileColor(100) === '#f2767c',
+    `${percentileColor(0)} … ${percentileColor(100)}`,
+  );
+  check(
+    '  warms as the percentile rises above the median',
+    channel(percentileColor(99), 0) > channel(percentileColor(75), 0) &&
+      channel(percentileColor(75), 0) > channel(percentileColor(55), 0) &&
+      channel(percentileColor(55), 0) > channel(percentileColor(50), 0),
+    [55, 75, 99].map((p) => `p${p}=${percentileColor(p)}`).join(' '),
+  );
+  check(
+    '  cools as the percentile falls below the median',
+    channel(percentileColor(0), 1) > channel(percentileColor(25), 1) &&
+      channel(percentileColor(25), 1) > channel(percentileColor(45), 1),
+    [0, 25, 45].map((p) => `p${p}=${percentileColor(p)}`).join(' '),
+  );
+  check(
+    '  every percentile yields a valid colour',
+    Array.from({ length: 101 }, (_, p) => percentileColor(p)).every((hex) => /^#[0-9a-f]{6}$/.test(hex)),
   );
 
   console.log(`\n${RULE}\nHeatmaps`);

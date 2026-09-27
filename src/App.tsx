@@ -9,7 +9,7 @@ import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
 import { heatGradient } from './core/color';
 import { buildHeatmap, HEAT_METRICS, type HeatMetricId, type HeatMetricInfo } from './core/heatmap';
-import { computeMetrics, describeNorm, EASY_PERCENTILE, formatPercentile, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileOf } from './core/metrics';
+import { computeMetrics, describeNorm, EASY_PERCENTILE, formatPercentile, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileColor, percentileOf } from './core/metrics';
 import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
 import { usePersistentState } from './core/persistence';
 import { compactNumber, round } from './core/text';
@@ -398,7 +398,7 @@ function Metric({
       <span className="metric__value">
         {value}
         {percentile !== null && (
-          <span className="metric__chip" data-percentile={Math.round(percentile)}>
+          <span className="metric__chip" data-percentile={Math.round(percentile)} style={{ color: percentileColor(percentile) }}>
             {formatPercentile(percentile)}
           </span>
         )}

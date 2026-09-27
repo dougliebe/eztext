@@ -9,6 +9,7 @@
  * Everything is a pure function of the text and cheap enough to run on every
  * keystroke alongside the analysis pipeline.
  */
+import { mixHex } from './color';
 import { DALE_CHALL_WORDS } from './data/dale-chall';
 import { CLEAR_CORPUS, type MetricNorm } from './data/corpus-norms';
 import { countSyllables, splitParagraphs, splitSentences, tokenizeWords } from './text';
@@ -62,6 +63,35 @@ export const NOTABLE_PERCENTILE = 93;
 
 /** Percentile at or below which a metric is called out as notably easier. */
 export const EASY_PERCENTILE = 7;
+
+/** Ramp endpoints for percentile labels — green (easy) through to red (hard). */
+const PERCENTILE_COOL = '#56d39a';
+const PERCENTILE_NEUTRAL = '#8592a3';
+const PERCENTILE_WARM = '#f0b45c';
+const PERCENTILE_HOT = '#f2767c';
+
+/** Where the warm half of the ramp hands over from amber to red. */
+const WARM_HANDOVER = 0.72;
+
+/**
+ * Colour for a percentile label: neutral at the median, cooling toward green
+ * below it and warming through amber to red above it.
+ *
+ * All five normative metrics point the same way — a higher percentile always
+ * means harder to read — so one ramp serves all of them. The exponent shows the
+ * tint sooner than a linear blend would, otherwise everything between the 20th
+ * and 80th percentile would look identical.
+ */
+export function percentileColor(percentile: number): string {
+  const p = Math.max(0, Math.min(100, percentile));
+
+  if (p <= 50) return mixHex(PERCENTILE_NEUTRAL, PERCENTILE_COOL, (1 - p / 50) ** 0.75);
+
+  const t = (p - 50) / 50;
+  return t <= WARM_HANDOVER
+    ? mixHex(PERCENTILE_NEUTRAL, PERCENTILE_WARM, (t / WARM_HANDOVER) ** 0.75)
+    : mixHex(PERCENTILE_WARM, PERCENTILE_HOT, (t - WARM_HANDOVER) / (1 - WARM_HANDOVER));
+}
 
 /** Ordinal label for a percentile: `1st`, `24th`, `92nd`, `<1st`, `>99th`. */
 export function formatPercentile(percentile: number): string {

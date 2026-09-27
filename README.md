@@ -200,8 +200,17 @@ and they are the ones with hover tooltips explaining the definition.
 
 Each of the five ratios carries a small **percentile chip** — how far into the CLEAR corpus distribution
 your value sits. `22nd` on words/sentence means your sentences are shorter than 78% of published
-excerpts; `91st` on chars/word means your words are longer than 91% of them. Chip colour appears only in
-the tails: ≥ 93rd shows amber, ≤ 7th shows green. Hovering gives the definition plus the numbers:
+excerpts; `91st` on chars/word means your words are longer than 91% of them.
+
+The chip's **font colour is a continuous ramp**, so the strip can be scanned at a glance: neutral grey at
+the 50th percentile, cooling to green below it and warming through amber to red above it.
+
+```
+p22 → #67bc9d   p66 → #c0a57c   p79 → #e0af67   p91 → #f19c68   p99 → #f27a7a
+```
+
+The box around it is tinted only in the tails (≥ 93rd amber, ≤ 7th green). Hovering gives the definition
+plus the numbers:
 
 ```
 Average sentence length in words.
