@@ -121,8 +121,19 @@ export function scoreWindow(input: {
   indexOffset?: number;
   /** How many alternatives to keep per position. */
   topK?: number;
+  /**
+   * Exact document text for each id, when the caller can recover it.
+   *
+   * Byte-level BPE splits multi-byte characters across tokens (`“` can arrive as
+   * two ids), and decoding half a character with `decode([id])` yields U+FFFD of
+   * the wrong length — which shifts `summarise`'s running cursor and every offset
+   * after it. The model process derives these from the tokenizer's own bytes
+   * (`tokenTexts` in `scripts/model-server.mjs`); synthetic vocabularies omit
+   * them and fall back to `decode`.
+   */
+  texts?: string[];
 }): ScoredToken[] {
-  const { logits, positions, vocab, ids, decode, indexOffset = 0 } = input;
+  const { logits, positions, vocab, ids, decode, indexOffset = 0, texts } = input;
   // Guard the NaN that `Number(undefined)` produces — with a NaN k the ranking
   // loop's early-out never fires and the candidate arrays grow to the whole
   // vocabulary, which turns one forward pass into minutes of work.
@@ -134,7 +145,7 @@ export function scoreWindow(input: {
 
   for (let local = 0; local < ids.length; local += 1) {
     const index = indexOffset + local;
-    const piece = decode(ids[local]);
+    const piece = texts?.[local] ?? decode(ids[local]);
 
     // The first token of the whole document has no context, so it has no
     // surprisal. Within a window, token 0 is either that token or a context
@@ -230,10 +241,12 @@ export function rankNext(input: {
 /**
  * Fold subword pieces into words and compute the summary figures.
  *
- * Character offsets are derived here by walking the pieces, because
- * concatenating a byte-level BPE decode reproduces the document exactly — this
- * is what lets a word taken from the model line up with the app's own
- * tokenizer.
+ * Character offsets are derived here by walking the pieces, so they are only
+ * sound when concatenating them reproduces the document. `tokenizer.decode([id])`
+ * alone does not guarantee that — byte-level BPE can split a multi-byte character
+ * across tokens — which is why `scoreWindow` accepts exact `texts` from the model
+ * process, and why `offsetsExact` is reported (and enforced by the surprisal
+ * tool) rather than assumed.
  */
 export function summarise(tokens: ScoredToken[], text: string, model: string): SurprisalScores {
   let cursor = 0;

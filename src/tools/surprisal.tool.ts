@@ -150,20 +150,26 @@ export const surprisalTool: Tool = {
     const high = words.filter((word) => word.bits >= scores.quantiles.p90).length;
 
     const annotations: AnnotationDraft[] = [];
-    for (const word of words) {
-      if (onlySurprising && word.bits < notableBits) continue;
-      annotations.push({
-        start: word.start,
-        end: word.end,
-        label: cleanWord(word),
-        group: word.bits >= scores.quantiles.p90 ? 'high' : word.bits >= scores.quantiles.p50 ? 'medium' : 'low',
-        detail: describe(word),
-        // Paper → red, opaque: the mix is the rendered colour, and `alpha: 1`
-        // tells the renderer not to blend it with anything.
-        color: shadeColor(surprisalScale(word.bits, reference)),
-        alpha: 1,
-        data: { bits: word.bits, gain: word.expected?.gain ?? 0, tokenCount: word.tokenCount },
-      });
+    // Offsets are the model's promise that word ranges line up with the document.
+    // When it cannot keep that promise (`offsetsExact` is false — byte-level
+    // decoding did not reproduce the text) the numbers still stand, but every
+    // highlight is withheld: shading the wrong ranges would be worse than none.
+    if (scores.offsetsExact) {
+      for (const word of words) {
+        if (onlySurprising && word.bits < notableBits) continue;
+        annotations.push({
+          start: word.start,
+          end: word.end,
+          label: cleanWord(word),
+          group: word.bits >= scores.quantiles.p90 ? 'high' : word.bits >= scores.quantiles.p50 ? 'medium' : 'low',
+          detail: describe(word),
+          // Paper → red, opaque: the mix is the rendered colour, and `alpha: 1`
+          // tells the renderer not to blend it with anything.
+          color: shadeColor(surprisalScale(word.bits, reference)),
+          alpha: 1,
+          data: { bits: word.bits, gain: word.expected?.gain ?? 0, tokenCount: word.tokenCount },
+        });
+      }
     }
 
     const top = worst.slice(0, 6);
@@ -209,6 +215,16 @@ export const surprisalTool: Tool = {
         hint: `${scores.tokens.length} tokens${scores.chunked ? ', windowed' : ''}`,
       },
     ];
+
+    if (!scores.offsetsExact) {
+      stats.unshift({
+        id: 'surprisal.offsets',
+        label: 'Highlights withheld',
+        value: 'inexact offsets',
+        hint: 'The model could not align its tokens to the document, so word ranges are not shaded.',
+        tone: 'warn',
+      });
+    }
 
     return { annotations, stats, summary: SUMMARY, groupDescriptions: GROUP_DESCRIPTIONS };
 

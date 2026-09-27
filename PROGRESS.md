@@ -19,7 +19,7 @@
   answered "what word did I miss"; the phrases answer "where is this sentence heading".
 - `main` carries the common-words/model work, the GSDS merge, the inspector gating fix and the
   name/figure rule; pushed to `origin/main`.
-- `npm run build`, `npm run smoke` (221 assertions) and `npm run ui-check` (79 assertions in the browser)
+- `npm run build`, `npm run smoke` (223 assertions) and `npm run ui-check` (80 assertions in the browser)
   all pass on the merged tree.
 
 ## In progress
@@ -302,6 +302,16 @@ the top of the results pane when something in the preview is selected).
   about half of what the old count called unfamiliar was names and demonyms (`Mr`, `England`,
   `American`, `DNA`) — a reclassification, not a loosening. A name that opens a sentence still counts:
   capitalisation plus sentence position cannot tell it from English orthography.
+- **Surprisal word offsets no longer drift after multi-byte punctuation** (user report): byte-level BPE
+  splits `“ ” ’ — 🎉` across tokens, and `tokenizer.decode([id])` turns half a UTF-8 sequence into
+  U+FFFD of the wrong length — so every character offset after the first curly quote shifted and the
+  preview shaded the wrong ranges. The model process now rebuilds each token's exact span from its
+  vocabulary bytes (`tokenTexts` in `scripts/model-server.mjs`) and passes them to `scoreWindow`; the
+  continuation phrase is decoded from the whole branch for the same reason. `offsetsExact` is now
+  enforced: `surprisalTool` withholds every highlight and adds a warn stat when the offsets cannot be
+  trusted. Measured on the reported text: the 343 rendered word spans match the model's 343 words
+  one-for-one; before the fix `really` sliced into `re` + `ally?`. Verified: typecheck, smoke
+  (223 assertions), build, ui-check (80 assertions, including a new multi-byte offsets check).
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long

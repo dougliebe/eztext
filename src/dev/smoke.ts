@@ -869,6 +869,49 @@ function main(): void {
     `mean ${summary.meanBits.toFixed(2)} bits/token, max ${summary.maxBits.toFixed(2)} bits/word`,
   );
 
+  // Regression: byte-level BPE can split one character across tokens (`“` may
+  // arrive as two ids), and decoding half a character yields U+FFFD of the wrong
+  // length, which shifts every offset after it. The process supplies exact spans
+  // cut from the document's own bytes; these simulate that hand-off, and the
+  // lossy decode proves the fallback is reported rather than silently shading.
+  const splitText = 'A \u201CB\u201D C';
+  const splitIds = [0, 1, 2, 3, 4];
+  const splitTexts = ['A', ' \u201C', '', 'B\u201D', ' C'];
+  const lossyDecode = (id: number) => ['A', ' \uFFFD', '\uFFFD', 'B\u201D', ' C?'][id] ?? '?';
+  const splitLogits = new Float32Array(splitIds.length * probeVocab);
+  const splitTokens = scoreWindow({
+    logits: splitLogits,
+    positions: splitIds.length,
+    vocab: probeVocab,
+    ids: splitIds,
+    decode: lossyDecode,
+    texts: splitTexts,
+    topK: 1,
+  });
+  const splitSummary = summarise(splitTokens, splitText, 'test-model');
+  check(
+    'exact spans survive a character split across tokens',
+    splitSummary.offsetsExact && splitSummary.words.map((word) => word.text).join('|') === 'A| \u201CB\u201D| C',
+    `${splitSummary.offsetsExact ? 'exact' : 'inexact'}: ${splitSummary.words.map((word) => `"${word.text}"`).join(' ')}`,
+  );
+  const lossySummary = summarise(
+    scoreWindow({
+      logits: splitLogits,
+      positions: splitIds.length,
+      vocab: probeVocab,
+      ids: splitIds,
+      decode: lossyDecode,
+      topK: 1,
+    }),
+    splitText,
+    'test-model',
+  );
+  check(
+    'a lossy piece decode is reported, not hidden',
+    lossySummary.offsetsExact === false,
+    `offsetsExact=${lossySummary.offsetsExact}`,
+  );
+
   // Regression: `Number(undefined)` is NaN, and a NaN k made the ranking loop's
   // early-out never fire, growing the candidate arrays to the whole vocabulary.
   console.log('\n  guards:');

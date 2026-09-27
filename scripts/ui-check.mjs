@@ -560,6 +560,28 @@ if (!health?.ready) {
   const shaded = await page.locator('.hl[data-tool="surprisal"]').count();
   check('running shades every word', shaded > 20, `${shaded} shaded words`);
 
+  // Byte-level BPE splits “ ” ’ — across tokens; decoding half a character
+  // yields U+FFFD of the wrong length, which shifts every offset after it. The
+  // server must cut spans from the document's own bytes instead of decoding each
+  // piece, or every word after the first curly quote lands in the wrong place.
+  const quoted = 'The na\u00EFve caf\u00E9 said \u201Cdon\u2019t\u201D \u2014 really, it\u2019s fine.';
+  const quotedScores = await fetch(`${baseUrl}/api/model/score`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: quoted }),
+  })
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null);
+  const quotedWords = (quotedScores?.words ?? []).map((word) => word.text.trim());
+  check(
+    'multi-byte punctuation keeps word offsets exact',
+    quotedScores?.offsetsExact === true &&
+      quotedWords.includes('\u201Cdon\u2019t\u201D') &&
+      quotedWords.includes('really,') &&
+      !quotedWords.some((word) => word.includes('\uFFFD')),
+    quotedScores?.offsetsExact === false ? 'offsetsExact=false' : quotedWords.join(' | '),
+  );
+
   // The ramp runs from the page background to red: opaque mixes, so the colour
   // that lands on screen is the colour that was contrast-checked.
   const ramp = await page.evaluate(() => {
@@ -810,7 +832,17 @@ check('flagged words carry their detail in the tooltip', (await withDetail.count
 // plus meaning neighbours. The word span is the deepest element, so this clicks
 // the word rather than the sentence behind it.
 await page.locator('.hl[data-tool="common-words"]').filter({ hasText: 'brutalist' }).first().click();
-await page.waitForTimeout(250);
+// Meaning neighbours arrive asynchronously (the embedding service is its own
+// model), so wait for them before reading the card: a slow first request is not
+// a regression, and the check below is about the answer, not the latency.
+await page
+  .waitForFunction(
+    () => [...document.querySelectorAll('.inspector__hint')].some((el) => /meaning/.test(el.textContent ?? '')),
+    undefined,
+    { timeout: 5000 },
+  )
+  .catch(() => {});
+await page.waitForTimeout(100);
 
 const inspector = await page.evaluate(() => {
   const node = document.querySelector('.inspector');

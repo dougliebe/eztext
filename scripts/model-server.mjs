@@ -119,6 +119,98 @@ function decodePiece(id) {
   return piece;
 }
 
+/**
+ * GPT-2's byte ⇄ unicode alphabet, inverted.
+ *
+ * The vocabulary stores bytes as printable characters (`bytes_to_unicode()` in
+ * the original implementation). `decodePiece` is fine for display, but it is
+ * wrong for offsets: a multi-byte character can be split across tokens, and
+ * decoding half a UTF-8 sequence yields U+FFFD with the wrong length.
+ */
+const BYTE_DECODER = (() => {
+  const bytes = [
+    ...Array.from({ length: 0x7e - 0x21 + 1 }, (_, index) => 0x21 + index),
+    ...Array.from({ length: 0xac - 0xa1 + 1 }, (_, index) => 0xa1 + index),
+    ...Array.from({ length: 0xff - 0xae + 1 }, (_, index) => 0xae + index),
+  ];
+  const chars = [...bytes];
+  let next = 0;
+  for (let byte = 0; byte < 256; byte += 1) {
+    if (!bytes.includes(byte)) {
+      bytes.push(byte);
+      chars.push(256 + next);
+      next += 1;
+    }
+  }
+  const decoder = new Map();
+  bytes.forEach((byte, index) => decoder.set(String.fromCodePoint(chars[index]), byte));
+  return decoder;
+})();
+
+/** piece string → bytes, per token id. Built once the tokenizer is loaded. */
+let vocabById = null;
+const tokenByteCache = new Map();
+
+function tokenBytes(id) {
+  let bytes = tokenByteCache.get(id);
+  if (bytes !== undefined) return bytes;
+  if (!vocabById) {
+    vocabById = new Map();
+    for (const [piece, tokenId] of tokenizer.get_vocab()) vocabById.set(tokenId, piece);
+  }
+  const piece = vocabById.get(id);
+  if (piece === undefined) return null;
+  const out = [];
+  for (const character of piece) {
+    const byte = BYTE_DECODER.get(character);
+    if (byte === undefined) return null;
+    out.push(byte);
+  }
+  bytes = Uint8Array.from(out);
+  tokenByteCache.set(id, bytes);
+  return bytes;
+}
+
+const utf8Length = (codePoint) =>
+  codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
+
+/**
+ * The exact document text for every token id, or `null` when it cannot be
+ * recovered.
+ *
+ * `summarise` derives character offsets by walking the pieces, which is only
+ * sound if concatenating them reproduces the document. `decode([id])` breaks
+ * that for any multi-byte character split across tokens, so this concatenates
+ * the tokens' own bytes instead and walks the document's UTF-8 bytes, cutting a
+ * span where each token's byte budget runs out. A character belongs to the
+ * token that contains its first byte, which keeps the spans tiling the text
+ * even when a token boundary falls inside a character.
+ */
+function tokenTexts(text, ids) {
+  const boundaries = [0];
+  for (const id of ids) {
+    const bytes = tokenBytes(id);
+    if (!bytes) return null;
+    boundaries.push(boundaries[boundaries.length - 1] + bytes.length);
+  }
+  if (boundaries[boundaries.length - 1] !== Buffer.byteLength(text, 'utf8')) return null;
+
+  const texts = [];
+  let charIndex = 0;
+  let bytePos = 0;
+  for (let i = 0; i < ids.length; i += 1) {
+    const start = charIndex;
+    const target = boundaries[i + 1];
+    while (charIndex < text.length && bytePos < target) {
+      const codePoint = text.codePointAt(charIndex);
+      bytePos += utf8Length(codePoint);
+      charIndex += codePoint > 0xffff ? 2 : 1;
+    }
+    texts.push(text.slice(start, charIndex));
+  }
+  return texts;
+}
+
 /** One document through the model. Serialised: a second call waits its turn. */
 let queue = Promise.resolve();
 function enqueue(task) {
@@ -148,6 +240,9 @@ async function score(text, topK = TOP_K) {
     // token counts — both mistakes score the wrong text.
     const input = await tokenizer(normalised);
     const ids = Array.from(input.input_ids.data).map(Number);
+    // Exact spans, so a multi-byte character split across tokens cannot shift
+    // the character offsets the app shades by. `null` falls back to the pieces.
+    const texts = tokenTexts(normalised, ids);
 
     const tokens = [];
     let truncated = false;
@@ -175,6 +270,7 @@ async function score(text, topK = TOP_K) {
         vocab,
         ids: windowIds,
         decode: decodePiece,
+        texts: texts ? texts.slice(windowStart, start + CONTEXT) : undefined,
         indexOffset: windowStart,
         topK,
       });
@@ -251,10 +347,9 @@ function startedWords(pieces) {
   return count;
 }
 
-/** The first `words` words of a branch, as display text. */
-function phraseOf(pieces, words) {
-  return pieces
-    .join('')
+/** The first `words` words of a decoded branch, as display text. */
+function phraseOf(text, words) {
+  return text
     .replace(/\s+/g, ' ')
     .trim()
     .split(' ')
@@ -395,7 +490,7 @@ async function continueFrom(text, options = {}) {
     const seen = new Set();
     const results = [];
     for (const row of rows) {
-      const phrase = phraseOf(row.pieces, words);
+      const phrase = phraseOf(tokenizer.decode(row.ids), words);
       const key = phrase.toLowerCase();
       if (!phrase || seen.has(key)) continue;
       seen.add(key);
