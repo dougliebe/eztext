@@ -1,5 +1,5 @@
 import type { AnnotationDraft, Stat, Tone, Tool } from '../core/types';
-import { average, countSyllables, isStopword, round, splitSentences, tokenizeWords } from '../core/text';
+import { countSyllables, isStopword, round, splitSentences, tokenizeWords } from '../core/text';
 
 function fleschTone(score: number): Tone {
   if (score >= 60) return 'good';
@@ -136,10 +136,3 @@ export const readabilityTool: Tool = {
     return { annotations: [...longAnnotations, ...complexAnnotations], stats };
   },
 };
-
-/** Exported for the sample document / future tools. */
-export function averageSentenceLength(text: string): number {
-  const ranges = splitSentences(text);
-  const lengths = ranges.map((range) => tokenizeWords(text.slice(range.start, range.end)).length);
-  return round(average(lengths) ?? 0, 1);
-}

@@ -7,14 +7,11 @@
  */
 import type { Tool } from '../core/types';
 import { readabilityTool } from './readability.tool';
-import { repeatedWordsTool } from './repeated-words.tool';
-import { sentencesTool } from './sentences.tool';
-import { verbsTool } from './verbs.tool';
 
-export const tools: Tool[] = [sentencesTool, verbsTool, repeatedWordsTool, readabilityTool];
+export const tools: Tool[] = [readabilityTool];
 
 export function getTool(id: string): Tool | undefined {
   return tools.find((tool) => tool.id === id);
 }
 
-export { sentencesTool, verbsTool, repeatedWordsTool, readabilityTool };
+export { readabilityTool };

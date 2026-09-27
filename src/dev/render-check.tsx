@@ -11,12 +11,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import App from '../App';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
 import { HEAT_METRICS } from '../core/heatmap';
+import { tools } from '../tools';
 
 const html = renderToStaticMarkup(createElement(App));
 
 const checks: Array<[string, boolean]> = [
   ['brand renders', html.includes('eztext')],
-  ['toolbar renders every tool', ['Sentences', 'Verbs', 'Repeated words', 'Readability'].every((name) => html.includes(name))],
+  // Derived from the registry, so adding or removing a tool cannot leave this
+  // check asserting names that no longer exist.
+  ['toolbar renders every registered tool', tools.every((tool) => html.includes(tool.name))],
+  ['registry is not empty', tools.length > 0],
   ['metrics render', html.includes('Read time') && html.includes('Annotations')],
   [
     'language metrics render',

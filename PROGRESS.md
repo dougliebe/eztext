@@ -21,7 +21,8 @@
   input/preview/results splitters, statusbar.
 - Results pane tabs: Results (per-tool panels, group filters, paged rows), Stats (metric cards),
   JSON (copyable export of the whole run).
-- Four starter tools: Sentences, Verbs (incl. "avg words between verbs"), Repeated words, Readability.
+- Tools: Readability only. Sentences, Verbs and Repeated words were removed as examples — they were
+  demonstrations of the contract rather than things worth reading with (recoverable from git history).
 - Hover/click synchronisation across preview ↔ rows ↔ coverage strip; localStorage persistence.
 - `npm run smoke`: headless pipeline run with invariant assertions (tiling, layering, coverage,
   unique ids) plus a `renderToStaticMarkup` check of the full app.

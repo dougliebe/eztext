@@ -6,7 +6,7 @@ Type or paste text at the top, toggle tools in the toolbar, and read the results
 
 ```
 ┌─ topbar ──────────────── document metrics ─────────────────────────────┐
-├─ toolbar ── [Structure] Sentences · Verbs   [Readability] Readability ──┤
+├─ toolbar ── [Readability] Readability · … your tools here ─────────┤
 │                          ⚙ opens that tool's settings                  │├─ input (editable) ───────────┬─ preview (annotated, hoverable) ─────────┤
 │                              │  tint + stacked underlines per layer    │
 │                              ├─ coverage strip: one track per tool ────┤
@@ -115,7 +115,7 @@ export const echoTool: Tool = {
 Then register it in `src/tools/index.ts`:
 
 ```ts
-export const tools: Tool[] = [sentencesTool, verbsTool, repeatedWordsTool, readabilityTool, echoTool];
+export const tools: Tool[] = [readabilityTool, echoTool];
 ```
 
 That's the whole cost of a new extension. You get a toolbar chip, a settings popover, per-tool stats,
@@ -137,10 +137,13 @@ inclusion in `npm run smoke` for free.
 
 | Tool | What it demonstrates | Stats it produces |
 | --- | --- | --- |
-| **Sentences** | Broad structural annotations that everything else overlaps | count, avg/median words, longest, length variation |
-| **Verbs** | A lexicon + morphology approach, auxiliaries vs main verbs, opt-in guessing | count, density, **avg words between verbs**, longest verb-free stretch, verbs/sentence |
-| **Repeated words** | Off by default, options that change the entire result set | repeated types, occurrence share, top repeats, diversity |
-| **Readability** | Producing both annotations and document-level scores | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word |
+| **Readability** | Producing both annotations and document-level scores: long sentences and complex words overlap, so it exercises the layering | Flesch Reading Ease, Flesch–Kincaid, Gunning Fog, syllables/word, complex-word share |
+
+Earlier revisions shipped Sentences, Verbs and Repeated-words tools as worked examples of the contract.
+They were removed because they were demonstrations rather than things worth reading with — the recipe
+above is the documentation instead. They remain in git history (`git log -- src/tools`) if a
+future tool wants the verb lexicon or the sentence-boundary heuristics.
+
 
 ## Layout of the code
 
