@@ -271,6 +271,14 @@ the top of the results pane when something in the preview is selected).
   Surprisal got descriptions too (Surprisal has no examples — its alternatives table is the fix).
   Smoke fails if a group has no explanation or if examples cover only some of a tool's groups; the
   render check asserts the explanations reach the page.
+- **Stats-pane percentile norms** (`npm run stats:norms` → `core/data/stat-norms.ts`): the generator runs
+  `readabilityTool` and `gsdsTool` over all 4,724 CLEAR excerpts with default options, so the norms come
+  from the implementation rather than a second copy of the formulas. Eleven rates/scores now get chips:
+  Flesch 65.55 ± 17.82, FK 9.40 ± 4.32, Fog 12.35 ± 4.67, syllables 1.41 ± 0.16, complex words 9.6% ± 6.0%,
+  words/sentence 21.29 ± 9.23, SDS 4.74 ± 2.40, words/T-unit 15.91 ± 5.12, sub/T-unit 0.55 ± 0.34,
+  main clause length 11.78 ± 3.68, sub clause length 7.45 ± 2.42. The two metrics that overlap the topbar
+  (syllables/word, words/sentence) match the existing norms to 1e-3, which smoke asserts. The generator
+  prints the normal-CDF error per stat; worst is 9.4 pp (sub clauses/T-unit).
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long
@@ -413,5 +421,10 @@ the top of the results pane when something in the preview is selected).
   both variables — rather than "fixing" them, so scores stay comparable to the published norms. The
   two places the sources disagree (be/have auxiliary vs all forms; the length-bound formula) are an
   option and a caveat, never a silent choice.
+- **Stats-pane percentiles are for rates, not counts**: CLEAR excerpts are a fixed ~174 words, so a count
+  of long sentences, unfamiliar words or weighted features would measure length rather than the writing —
+  the topbar made the same call. The chip's colour always follows difficulty, so `higherIsEasier` flips
+  Flesch Reading Ease's tint while leaving its percentile alone, and the length-bound SDS drops its chip
+  past 400 words while the length-normalised GSDS rates keep theirs.
 
 _Last updated: 2026-09-27_

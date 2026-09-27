@@ -13,6 +13,7 @@ import { analyseGsds, gradeForSds, GSDS_VARIABLES, GSDS_WEIGHTS, scoreGsds } fro
 import { gsdsTool } from '../tools/gsds.tool';
 import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
 import { scoreWindow, summarise, surprisalScale } from '../core/surprisal';
+import { readabilityTool } from '../tools/readability.tool';
 import { surprisalTool } from '../tools/surprisal.tool';
 import { CLEAR_SURPRISAL_NORMS } from '../core/data/surprisal-norms';
 import { runAnalysis } from '../core/engine';
@@ -33,6 +34,7 @@ import {
 } from '../core/metrics';
 import { contrastRatio, maxMixForContrast, mixHex, parseHex, relativeLuminance } from '../core/color';
 import { CLEAR_CORPUS } from '../core/data/corpus-norms';
+import { CLEAR_STAT_NORMS } from '../core/data/stat-norms';
 import { COMMON_WORD_FLOOR, COMMON_WORDS, countCommonWords, prevalenceOf } from '../core/data/common-words';
 import { FUNCTION_WORDS } from '../core/data/function-words';
 import {
@@ -581,6 +583,84 @@ function main(): void {
     'sample words are longer than the typical excerpt',
     sampleZs[1] > 0,
     `z ${formatZ(sampleZs[1])} on chars/word`,
+  );
+
+  console.log(`\n${RULE}\nStats-pane percentile norms — ${CLEAR_STAT_NORMS.name}, n=${CLEAR_STAT_NORMS.n}`);
+  const statNormEntries = Object.entries(CLEAR_STAT_NORMS.metrics);
+  console.log(`  ${statNormEntries.length} stats have norms: ${statNormEntries.map(([id]) => id).join(', ')}`);
+  check(
+    'stat norms are populated and plausible',
+    CLEAR_STAT_NORMS.n === CLEAR_CORPUS.n &&
+      statNormEntries.length >= 10 &&
+      statNormEntries.every(([, norm]) => Number.isFinite(norm.mean) && norm.sd > 0) &&
+      CLEAR_STAT_NORMS.metrics['read.flesch'].mean > 50 &&
+      CLEAR_STAT_NORMS.metrics['read.flesch'].mean < 80 &&
+      CLEAR_STAT_NORMS.metrics['gsds.score'].mean > 2 &&
+      CLEAR_STAT_NORMS.metrics['gsds.score'].mean < 10,
+    `${statNormEntries.length} norms from ${CLEAR_STAT_NORMS.n} excerpts`,
+  );
+  check(
+    'stat norms agree with the topbar norms where they overlap',
+    Math.abs(CLEAR_STAT_NORMS.metrics['read.syllables'].mean - CLEAR_CORPUS.metrics.syllablesPerWord.mean) < 1e-3 &&
+      Math.abs(
+        CLEAR_STAT_NORMS.metrics['read.words.sentence'].mean - CLEAR_CORPUS.metrics.wordsPerSentence.mean,
+      ) < 0.01,
+    `syllables ${CLEAR_STAT_NORMS.metrics['read.syllables'].mean} vs ${CLEAR_CORPUS.metrics.syllablesPerWord.mean}, ` +
+      `words/sentence ${CLEAR_STAT_NORMS.metrics['read.words.sentence'].mean} vs ${CLEAR_CORPUS.metrics.wordsPerSentence.mean}`,
+  );
+
+  const readabilityStats = readabilityTool.run({ text: SAMPLE_TEXT, options: {} }).stats ?? [];
+  const comparedIds = [
+    'read.flesch',
+    'read.fk',
+    'read.fog',
+    'read.syllables',
+    'read.complex.share',
+    'read.words.sentence',
+  ];
+  check(
+    'every readability rate carries a percentile chip',
+    comparedIds.every((id) => {
+      const comparison = readabilityStats.find((stat) => stat.id === id)?.comparison;
+      return (
+        comparison !== undefined &&
+        comparison.percentile > 0 &&
+        comparison.percentile < 100 &&
+        Number.isFinite(comparison.z) &&
+        comparison.description.includes('CLEAR corpus')
+      );
+    }),
+  );
+  check(
+    'Flesch Reading Ease is marked higher-is-easier',
+    readabilityStats.find((stat) => stat.id === 'read.flesch')?.comparison?.higherIsEasier === true &&
+      readabilityStats.find((stat) => stat.id === 'read.fk')?.comparison?.higherIsEasier === undefined,
+  );
+  check(
+    'raw readability counts have no percentile',
+    readabilityStats.find((stat) => stat.id === 'read.long.sentences')?.comparison === undefined,
+  );
+
+  const gsdsStats = gsdsTool.run({ text: SAMPLE_TEXT, options: {} }).stats ?? [];
+  check(
+    'every GSDS rate carries a percentile chip',
+    ['gsds.score', 'gsds.wtu', 'gsds.subtu', 'gsds.main', 'gsds.sublen'].every(
+      (id) => gsdsStats.find((stat) => stat.id === id)?.comparison !== undefined,
+    ),
+  );
+  check(
+    'GSDS raw counts have no percentile',
+    ['gsds.total', 'gsds.dense', 'gsds.modals', 'gsds.prep'].every(
+      (id) => gsdsStats.find((stat) => stat.id === id)?.comparison === undefined,
+    ),
+  );
+  const longText = SAMPLE_TEXT.repeat(4);
+  check(
+    'the length-bound GSDS score drops its percentile',
+    computeMetrics(longText).words > 400 &&
+      gsdsTool.run({ text: longText, options: {} }).stats?.find((stat) => stat.id === 'gsds.score')?.comparison ===
+        undefined,
+    `${computeMetrics(longText).words} words`,
   );
 
   console.log('\n  z-score labelling:');

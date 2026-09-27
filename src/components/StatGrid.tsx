@@ -33,11 +33,17 @@ export function StatGrid({ stats }: { stats: Stat[] }) {
  * the tooltip. Only present where a tool actually has something to compare to.
  */
 function ComparisonChip({ comparison }: { comparison: StatComparison }) {
+  // The tint follows difficulty, not the raw deviation, so every chip in the
+  // pane warms toward "harder". Flesch Reading Ease is the one stat where a
+  // high score is the easy end, so only its colour is flipped.
+  const difficulty = comparison.higherIsEasier ? -comparison.z : comparison.z;
+  const direction = comparison.higherIsEasier ? 'higher scores are easier' : 'higher scores are harder';
+
   return (
     <span
       className="stat__chip"
-      style={{ color: deviationColor(comparison.z) }}
-      title={`${formatPercentile(comparison.percentile)} percentile\n${comparison.description} → z-score ${formatZ(comparison.z)}`}
+      style={{ color: deviationColor(difficulty) }}
+      title={`${formatPercentile(comparison.percentile)} percentile\n${comparison.description} → z-score ${formatZ(comparison.z)}\n${direction}`}
     >
       {formatPercentile(comparison.percentile)}
     </span>

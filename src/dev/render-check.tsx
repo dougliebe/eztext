@@ -56,6 +56,7 @@ const checks: Array<[string, boolean]> = [
   // preview, not by scrolling a list of every word.
   ['no annotation rows render', !html.includes('data-row=') && !html.includes('class="rows"')],
   ['stat cards render', html.includes('stat__value')],
+  ['stat percentile chips render', html.includes('stat__chip')],
   // One panel per *enabled* tool: a tool that is off by default has no panel.
   [
     'a panel renders per enabled tool',
