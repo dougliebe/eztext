@@ -3,7 +3,8 @@
 ## Current status
 - Framework is complete and working: Vite + React + TypeScript SPA with a plugin-shaped tool
   registry, live analysis, overlap-aware highlighting, and a tabbed results pane.
-- `npm run build` and `npm run smoke` both pass (engine invariants + headless render check).
+- Pushed to `origin/main`. `main` == `origin/main`, nothing outstanding.
+- `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
 ## In progress
 - Nothing.
@@ -35,6 +36,9 @@
   until the dev server restarts. Reproduced twice.
 - Layout persistence keys bumped to `layout.v3.*` so the corrected default reaches sessions that had
   a ratio saved while the sizing bug was live.
+- Pushed to GitHub (`dougliebe/eztext`): `9a7bd39` → `c0b44a4` → `27e4498` on `main`, fast-forward.
+  Before pushing, the local branch was rebased onto the remote's `c0b44a4`, which the local clone did
+  not have (see notes below). Re-verified after the rebase: typecheck, 16/16 smoke, 16/16 render.
 - Removed the per-tool methodology footnotes; `notes` is now reserved for engine-level diagnostics
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
@@ -50,6 +54,14 @@
 - More tools: clauses, adverbs/adjectives, passive voice, sentiment, word-length histogram, dialog.
 
 ## Decisions and notes
+- **Stray remote commit (resolved)**: `origin/main` carried `c0b44a4` — a commit appending
+  `# migraine_discord_bot` to `README.md` in **UTF-16LE**, mixed with ASCII, which made git treat the
+  README as a binary file. That content belongs to a different project. The rebase resolved the
+  README conflict in favour of the new documentation, so the stray line is gone from the working tree
+  but still recoverable at `c0b44a4`. If it mattered, restore it deliberately — do not re-add it in
+  UTF-16.
+- **Unrelated remote branch left alone**: `origin/claude/espn-fantasy-draft-app-6b5809` exists on the
+  remote and has nothing to do with eztext. Untouched.
 - **Stack**: Vite + React + TS, plain CSS with tokens. No CSS framework, no state library, no test
   runner — the pipeline is pure so `scripts/smoke.mjs` (esbuild + Node) covers it headlessly.
 - **Tool contract**: tools return `AnnotationDraft`s (range + label + group + detail + data) and never
