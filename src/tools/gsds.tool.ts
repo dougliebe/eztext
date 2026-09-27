@@ -6,6 +6,7 @@ import {
   type GsdsUnitBreakdown,
   type GsdsVariableId,
 } from '../core/gsds';
+import { compareStat } from '../core/stat-norms';
 import { round } from '../core/text';
 import type { AnnotationDraft, Stat, Tool } from '../core/types';
 
@@ -388,6 +389,10 @@ export const gsdsTool: Tool = {
           ? 'weighted total ÷ T-units · length-bound: the instrument was normed on ~200-word samples'
           : 'weighted total ÷ T-units',
         tone: lengthBound ? 'warn' : 'accent',
+        // Compared against CLEAR only when the length caveat is not in play: the
+        // instrument's own norms were built on ~200-word samples, and so were
+        // these, so a long document's raw score would sit far to the left.
+        comparison: lengthBound ? undefined : compareStat('gsds.score', analysis.sds, 'Syntactic Density Score'),
       },
       {
         id: 'gsds.grade',
@@ -426,24 +431,28 @@ export const gsdsTool: Tool = {
         label: 'Words / T-unit',
         value: round(frequencies.wordsPerTUnit, 2),
         hint: `variable 1 · ${contribution('wordsPerTUnit')}`,
+        comparison: compareStat('gsds.wtu', frequencies.wordsPerTUnit, 'Words / T-unit'),
       },
       {
         id: 'gsds.subtu',
         label: 'Sub clauses / T-unit',
         value: round(frequencies.subordinatePerTUnit, 2),
         hint: `variable 2 · ${contribution('subordinatePerTUnit')} · ${analysis.subordinateClauses} clauses`,
+        comparison: compareStat('gsds.subtu', frequencies.subordinatePerTUnit, 'Sub clauses / T-unit'),
       },
       {
         id: 'gsds.main',
         label: 'Main clause length',
         value: round(frequencies.mainClauseLength, 2),
         hint: `variable 3 · ${contribution('mainClauseLength')} · heuristic clause spans`,
+        comparison: compareStat('gsds.main', frequencies.mainClauseLength, 'Main clause length'),
       },
       {
         id: 'gsds.sublen',
         label: 'Sub clause length',
         value: round(frequencies.subordinateClauseLength, 2),
         hint: `variable 4 · ${contribution('subordinateClauseLength')} · heuristic clause spans`,
+        comparison: compareStat('gsds.sublen', frequencies.subordinateClauseLength, 'Sub clause length'),
       },
       {
         id: 'gsds.modals',

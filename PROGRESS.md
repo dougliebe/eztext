@@ -17,9 +17,13 @@
 - Selecting a word now shows **where the model goes next**: five five-word phrases, each from a different
   one of the model's likeliest next pieces (`POST /continue`). The ranked next-token table it replaced
   answered "what word did I miss"; the phrases answer "where is this sentence heading".
-- `main` carries the common-words/model work, the GSDS merge, the inspector gating fix and the
-  name/figure rule; pushed to `origin/main`.
-- `npm run build`, `npm run smoke` (223 assertions) and `npm run ui-check` (80 assertions in the browser)
+- **Tool stats carry CLEAR percentile chips too**: `npm run stats:norms` runs Readability and GSDS over
+  the corpus and records the mean ± SD of every rate and score (`core/data/stat-norms.ts`), so the
+  density tool's SDS, words/T-unit, sub clauses/T-unit and clause lengths all locate themselves against
+  the same reference prose the topbar uses. Raw counts deliberately have no norm.
+- `main` carries the common-words/model work, the GSDS merge, the inspector gating fix, the name/figure
+  rule and the stats-pane norms; pushed to `origin/main`.
+- `npm run build`, `npm run smoke` (232 assertions) and `npm run ui-check` (82 assertions in the browser)
   all pass on the merged tree.
 
 ## In progress
@@ -312,6 +316,14 @@ the top of the results pane when something in the preview is selected).
   trusted. Measured on the reported text: the 343 rendered word spans match the model's 343 words
   one-for-one; before the fix `really` sliced into `re` + `ally?`. Verified: typecheck, smoke
   (223 assertions), build, ui-check (80 assertions, including a new multi-byte offsets check).
+- **Stats-pane percentile norms** (`npm run stats:norms` → `core/data/stat-norms.ts`): the generator runs
+  `readabilityTool` and `gsdsTool` over all 4,724 CLEAR excerpts with default options, so the norms come
+  from the implementation rather than a second copy of the formulas. Eleven rates/scores now get chips:
+  Flesch 65.55 ± 17.82, FK 9.40 ± 4.32, Fog 12.35 ± 4.67, syllables 1.41 ± 0.16, complex words 9.6% ± 6.0%,
+  words/sentence 21.29 ± 9.23, SDS 4.74 ± 2.40, words/T-unit 15.91 ± 5.12, sub/T-unit 0.55 ± 0.34,
+  main clause length 11.78 ± 3.68, sub clause length 7.45 ± 2.42. The two metrics that overlap the topbar
+  (syllables/word, words/sentence) match the existing norms to 1e-3, which smoke asserts. The generator
+  prints the normal-CDF error per stat; worst is 9.4 pp (sub clauses/T-unit).
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long
@@ -454,5 +466,10 @@ the top of the results pane when something in the preview is selected).
   both variables — rather than "fixing" them, so scores stay comparable to the published norms. The
   two places the sources disagree (be/have auxiliary vs all forms; the length-bound formula) are an
   option and a caveat, never a silent choice.
+- **Stats-pane percentiles are for rates, not counts**: CLEAR excerpts are a fixed ~174 words, so a count
+  of long sentences, unfamiliar words or weighted features would measure length rather than the writing —
+  the topbar made the same call. The chip's colour always follows difficulty, so `higherIsEasier` flips
+  Flesch Reading Ease's tint while leaving its percentile alone, and the length-bound SDS drops its chip
+  past 400 words while the length-normalised GSDS rates keep theirs.
 
 _Last updated: 2026-09-27_

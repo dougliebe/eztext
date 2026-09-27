@@ -1,3 +1,4 @@
+import { compareStat } from '../core/stat-norms';
 import type { AnnotationDraft, Stat, Tone, Tool } from '../core/types';
 import { countSyllables, isStopword, round, splitSentences, tokenizeWords } from '../core/text';
 
@@ -90,11 +91,14 @@ export const readabilityTool: Tool = {
     const wordsPerSentence = totalSentences > 0 ? totalWords / totalSentences : 0;
     const syllablesPerWord = totalWords > 0 ? totalSyllables / totalWords : 0;
 
+    const complexShare = complexWordCount / Math.max(totalWords, 1);
     const flesch = 206.835 - 1.015 * wordsPerSentence - 84.6 * syllablesPerWord;
     const fleschKincaid = 0.39 * wordsPerSentence + 11.8 * syllablesPerWord - 15.59;
-    const gunningFog =
-      0.4 * (wordsPerSentence + 100 * (complexWordCount / Math.max(totalWords, 1)));
+    const gunningFog = 0.4 * (wordsPerSentence + 100 * complexShare);
 
+    // Comparisons are percentile chips against the CLEAR corpus; the raw counts
+    // (long sentences, complex words) deliberately have none, because a count's
+    // place in a fixed ~174-word excerpt measures length, not difficulty.
     const stats: Stat[] = [
       {
         id: 'read.flesch',
@@ -102,6 +106,7 @@ export const readabilityTool: Tool = {
         value: round(flesch, 1),
         hint: fleschLabel(flesch),
         tone: fleschTone(flesch),
+        comparison: compareStat('read.flesch', flesch, 'Flesch Reading Ease'),
       },
       {
         id: 'read.fk',
@@ -109,6 +114,7 @@ export const readabilityTool: Tool = {
         value: round(fleschKincaid, 1),
         hint: 'US school grade level',
         tone: gradeTone(fleschKincaid),
+        comparison: compareStat('read.fk', fleschKincaid, 'Flesch–Kincaid grade'),
       },
       {
         id: 'read.fog',
@@ -116,15 +122,28 @@ export const readabilityTool: Tool = {
         value: round(gunningFog, 1),
         hint: `uses ${complexWordCount} complex words`,
         tone: gradeTone(gunningFog),
+        comparison: compareStat('read.fog', gunningFog, 'Gunning Fog'),
       },
-      { id: 'read.syllables', label: 'Syllables / word', value: round(syllablesPerWord, 2), tone: syllablesPerWord > 1.7 ? 'warn' : 'neutral' },
+      {
+        id: 'read.syllables',
+        label: 'Syllables / word',
+        value: round(syllablesPerWord, 2),
+        tone: syllablesPerWord > 1.7 ? 'warn' : 'neutral',
+        comparison: compareStat('read.syllables', syllablesPerWord, 'Syllables / word'),
+      },
       {
         id: 'read.complex.share',
         label: 'Complex words',
-        value: `${round((complexWordCount / Math.max(totalWords, 1)) * 100, 1)}%`,
+        value: `${round(complexShare * 100, 1)}%`,
         hint: `${complexWordCount} of ${totalWords}`,
+        comparison: compareStat('read.complex.share', complexShare, 'Complex words'),
       },
-      { id: 'read.words.sentence', label: 'Words / sentence', value: round(wordsPerSentence, 1) },
+      {
+        id: 'read.words.sentence',
+        label: 'Words / sentence',
+        value: round(wordsPerSentence, 1),
+        comparison: compareStat('read.words.sentence', wordsPerSentence, 'Words / sentence'),
+      },
       {
         id: 'read.long.sentences',
         label: 'Long sentences',

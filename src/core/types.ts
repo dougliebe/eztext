@@ -88,6 +88,12 @@ export interface StatComparison {
   z: number;
   /** Describes the population, e.g. `CLEAR corpus: 5.14 ± 0.61 (n=4,724)`. */
   description: string;
+  /**
+   * True for the few stats where a high value is the *easy* end (Flesch
+   * Reading Ease). The percentile still describes the value; this only flips
+   * the chip's tint so its colour keeps meaning "harder than the corpus".
+   */
+  higherIsEasier?: boolean;
 }
 
 /** A single computed number/label shown in the stats views. */

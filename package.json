@@ -12,6 +12,7 @@
     "smoke": "node scripts/smoke.mjs",
     "ui-check": "node scripts/ui-check.mjs",
     "corpus:norms": "node scripts/build-corpus-norms.mjs",
+    "stats:norms": "node scripts/build-stat-norms.mjs",
     "words:common": "node scripts/build-common-words.mjs",
     "model": "node scripts/model-server.mjs",
     "model:norms": "node scripts/build-surprisal-norms.mjs"

@@ -636,13 +636,27 @@ if (!health?.ready) {
     (await page.locator('.tool-panel', { hasText: 'Surprisal' }).locator('.stat').count()) >= 6,
   );
 
-  // The three model figures carry a percentile against the CLEAR corpus.
-  const statChips = await page.evaluate(() =>
-    [...document.querySelectorAll('.tool-panel .stat__chip')].map((node) => ({
+  // The three model figures carry a percentile against the CLEAR corpus. The
+  // query is scoped to the Surprisal panel: readability and GSDS have their own
+  // chips now, and a global count would rot as more stats gain a norm.
+  const statChips = await page.evaluate(() => {
+    const panel = [...document.querySelectorAll('.tool-panel')].find(
+      (candidate) => candidate.querySelector('.tool-panel__name')?.textContent === 'Surprisal',
+    );
+    return [...(panel?.querySelectorAll('.stat__chip') ?? [])].map((node) => ({
       text: node.textContent ?? '',
       title: node.getAttribute('title') ?? '',
       colour: getComputedStyle(node).color,
-    })),
+    }));
+  });
+  const allChips = await page.evaluate(() =>
+    [...document.querySelectorAll('.tool-panel')].flatMap((panel) => {
+      const name = panel.querySelector('.tool-panel__name')?.textContent ?? '';
+      return [...panel.querySelectorAll('.stat__chip')].map((chip) => ({
+        panel: name,
+        label: chip.closest('.stat')?.querySelector('.stat__label')?.textContent ?? '',
+      }));
+    }),
   );
   check(
     'the model stats show corpus percentiles',
@@ -658,6 +672,20 @@ if (!health?.ready) {
     'chip colour tracks the deviation',
     statChips.every((chip) => /^rgb\(/.test(chip.colour)),
     statChips.map((chip) => chip.colour).join(' '),
+  );
+  check(
+    'readability rates carry CLEAR percentiles',
+    ['Flesch Reading Ease', 'Flesch–Kincaid grade', 'Gunning Fog', 'Syllables / word', 'Complex words', 'Words / sentence'].every(
+      (label) => allChips.some((chip) => chip.panel === 'Readability' && chip.label === label),
+    ),
+    allChips.filter((chip) => chip.panel === 'Readability').map((chip) => chip.label).join(', '),
+  );
+  check(
+    'GSDS rates carry CLEAR percentiles',
+    ['Syntactic Density Score', 'Words / T-unit', 'Sub clauses / T-unit', 'Main clause length', 'Sub clause length'].every(
+      (label) => allChips.some((chip) => chip.panel === 'Syntactic density' && chip.label === label),
+    ),
+    allChips.filter((chip) => chip.panel === 'Syntactic density').map((chip) => chip.label).join(', '),
   );
 
   // Editing must invalidate the scores rather than shade stale ranges.
