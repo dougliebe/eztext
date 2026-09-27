@@ -5,7 +5,10 @@
   registry, live analysis, overlap-aware highlighting, and a tabbed results pane.
 - Topbar shows 11 always-on document metrics; each of the five ratios carries a **percentile chip**
   derived from its z-score against the CLEAR corpus, with a colour-coded font.
-- Pushed to `origin/main`. `main` == `origin/main`, nothing outstanding.
+- The **Dale–Chall tool** is in: it flags exactly what `% unfamiliar` counts and, when a flagged word
+  is selected, names the nearest listed words — by meaning while the local model is running, by word
+  family always.
+- `main` is **2 commits ahead of `origin/main`** (the Dale–Chall work), not yet pushed.
 - `npm run build`, `npm run smoke` and `npm run ui-check` all pass.
 
 ## In progress
@@ -139,14 +142,37 @@
   colour from the heat ramp (`AnnotationDraft.color`). Selecting a shaded word pins an inspector
   at the top of the results pane showing the model's whole distribution at that position (probability
   bars, bits, bits saved) and which of them was the word actually written.
+- **Dale–Chall tool** (`src/tools/dale-chall.tool.ts`): flags every word outside the list — verified
+  equal to the topbar's `% unfamiliar` count on the sample (34 words) — and offers replacements for
+  each, grouped by how it can be fixed (`base form`, `shorter form`, `similar meaning`,
+  `close spelling`, `no match`, which double as the filter pills). Options: suggestions per word, match
+  strength, highlight only words with a match, and an opt-in filter for capitalised names that do not
+  open a sentence.
+- **Suggestions are ranked by how much they help, not by string distance**: word family first
+  (“passage” → pass, “reshaping” → shape, “writers” → write — a shorter word for the same idea is what
+  a readability tool is for), then embedding neighbours by meaning, then spelling as a no-model
+  fallback. Spelling alone was poor: “enormous” has no near neighbour among 3,000 fourth-grade words,
+  so the tool said nothing, and “merely” got “merry” because two letters matched.
+- **Local word embeddings in the model process** (`scripts/word-embeddings.mjs`, served at
+  `POST /similarity`): bge-small-en-v1.5 (34 MB, measured clearly better than MiniLM on single words),
+  the 2,941-word list embedded once (1.8 s) and cached as 6 MB of vectors in gitignored `.models/`. A
+  document then costs one embedding per *new* flagged word and ~5 ms to rank — 11 ms warm, 24 ms with a
+  new word. The familiarity rule and the tokenizer are bundled from `src/core/metrics.ts` /
+  `text.ts`, so the process and the app cannot disagree about what counts as unfamiliar.
+- **The overlap renderer nested its layers backwards**: the widest annotation (a sentence) ended up as
+  the deepest element under the pointer, so a click inside an overlap selected the structural
+  annotation instead of the word. Wrong since the framework commit, and invisible until a ui-check
+  clicked a flagged word and got a sentence back. `HighlightView` now wraps narrowest → widest, which
+  is what the engine's layering contract always said.
 
 ## Next steps
 - Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded
   word) — the data is already in the tool's annotations as `data.gain`.
 - Surprisal windows arrive all at once; streaming them per window would give progress on long documents.
 
-- An "unfamiliar words" tool that highlights exactly what `% unfamiliar` counts, reusing
-  `isFamiliarWord` — makes the topbar number explainable and is the obvious companion to it.
+- Context-aware suggestions: the Dale–Chall neighbours are word-level, so a masked pass over the
+  sentence (“…the patience it demands is [MASK]”) would use the surrounding text as well — one forward
+  pass per occurrence, and the model process already knows how to read a distribution at a position.
 - Cross-validate our metrics against the corpus's own columns (`Flesch-Reading-Ease`,
   `Flesch-Kincaid-Grade-Level`, `New Dale-Chall Readability Formula`): the xlsx already carries them, so
   the generator could report correlations and expose any weakness in the syllable heuristic.
@@ -221,5 +247,19 @@
   it. If it recurs: restart the dev server (`rm -rf node_modules/.vite` first if it exits with EPERM).
 - Heuristic (not statistical) NLP: english lexicon + morphology for verbs, vowel-group syllable
   estimate. Tools state their limits through each annotation's `detail` field, not through footnotes.
+- **Word similarity comes from embeddings, not a classifier** (and not from Laya, which is a typed
+  decision router whose options share a fixed token budget — it is not an embedding service). “Which
+  familiar word means most nearly this one?” is a ranking over a fixed 3,000-word list, so it is cosine
+  similarity over a precomputed matrix: no training, no labels, ~10 ms, on the local process the
+  surprisal tool already uses.
+- **The `similarity` signal is keyed by word, not by document, and is optional.** A word's embedding
+  does not depend on where it appears, so answers accumulate across edits instead of being discarded on
+  every keystroke; a model that is not running means no signal, not an error, and the tool falls back to
+  spelling. The tool re-checks every neighbour against the Dale–Chall list before showing it — the
+  signal crosses a process boundary, and “this word is on the list” has to survive bad data.
+- **Nothing leaves the machine**: the weights download once (34 MB) and are then loaded from
+  `.models/` — verified by loading with remote fetches disabled — and no API is involved. bge-small's
+  original weights are MIT (the ONNX conversion repo states no licence), and GPT-2 is MIT, so unlike the
+  CC BY-NC-SA CLEAR corpus these carry no non-commercial constraint.
 
-_Last updated: 2025-07-26_
+_Last updated: 2026-09-27_
