@@ -15,9 +15,10 @@ interface HighlightViewProps {
  * Renders annotations over the raw document.
  *
  * Overlap is visualised by nesting one span per covering annotation: the widest
- * annotation is the outermost element (background tint) and each narrower layer
- * adds its own underline, so a verb inside a flagged sentence reads as one tint
- * plus two stacked underlines.
+ * annotation is the outermost element and every layer washes its own translucent
+ * background over the text. The washes compound where layers overlap, so a verb
+ * inside a flagged sentence reads as a deeper tint — highlighting only, with no
+ * underline or other decoration under the text.
  *
  * `segments` already tiles the document exactly once and each `layers` array is
  * ordered widest → narrowest, so this function never has to reason about ranges
@@ -97,15 +98,6 @@ function SegmentView({ segment, hoverId, selectedId, onHover, onSelect }: Segmen
       borderRadius: 0,
       color: state === 'none' ? undefined : 'var(--text-strong)',
     };
-
-    // A single covering annotation is communicated by tint alone; stacked
-    // underlines appear only where layers genuinely overlap.
-    if (total > 1) {
-      style.textDecorationLine = 'underline';
-      style.textDecorationColor = withAlpha(layer.color, state === 'none' ? 0.85 : 1);
-      style.textDecorationThickness = '2px';
-      style.textUnderlineOffset = `${2 + 2 * (total - 1 - depth)}px`;
-    }
 
     if (state !== 'none') {
       // Ringed in the accent, not in the annotation's own colour: on this ramp a

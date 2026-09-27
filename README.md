@@ -8,7 +8,7 @@ Type or paste text at the top, toggle tools in the toolbar, and read the results
 ┌─ topbar ──────────────── document metrics ─────────────────────────────┐
 ├─ toolbar ── [Readability] Readability · … your tools here ─────────┤
 │                          ⚙ opens that tool's settings                  │├─ input (editable) ───────────┬─ preview (annotated, hoverable) ─────────┤
-│                              │  tint + stacked underlines per layer    │
+│                              │  tint per layer, darker on overlap      │
 │                              ├─ coverage strip: one track per tool ────┤
 ├────────────── draggable splitter ──────────────────────────────────────┤
 │ results │ stats │ JSON   —  per-tool panels, metrics, machine output   │
@@ -54,9 +54,9 @@ The two contracts that make this work:
   id, and the covered text, clamps ranges to the document, and drops empty ones.
 - **`Segment`** — a maximal run of text whose covering annotations never change, with `layers` ordered
   widest → narrowest. Segments tile the document exactly once, so overlap rendering becomes trivial:
-  nest one `<span>` per layer, give the outermost a background tint, and give every layer its own
-  underline offset. That is how a verb inside a flagged sentence reads as one tint plus two stacked
-  underlines.
+  nest one `<span>` per layer and give each a translucent background wash. The washes compound where
+  layers overlap, so a verb inside a flagged sentence reads as a deeper tint — highlighting only, with
+  nothing drawn under the text.
 
 Layering order is deterministic: widest annotation at the bottom, then registry order, then position.
 

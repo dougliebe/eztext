@@ -128,6 +128,9 @@
   all-forms, since the paper measured the gap). The length dependence (Belanger 1978) is surfaced as an
   amber hint past 400 words. Smoke pins the known relative-clause over-capture rather than hiding it.
   Full audit: `docs/gsds-feasibility.md`.
+- **Highlight renderer shows tint only** (user request): the stacked per-layer underlines are gone.
+  Each nested layer still washes its own translucent background, and the washes compound on overlap,
+  so depth remains visible without any decoration under the text.
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long
@@ -180,9 +183,10 @@
 - **Overlap model**: `buildSegments` partitions the document into maximal constant-layer segments
   (sweep line, O(n log n)). Layering rule: widest annotation at the bottom (structural context),
   narrowest on top (the specific match), ties broken by registry order then position.
-- **Overlap rendering**: one nested `<span>` per covering layer — outermost gets the background tint,
-  each layer adds its own `text-underline-offset`, so overlaps read as stacked underlines without
-  any CSS blending tricks.
+- **Overlap rendering**: one nested `<span>` per covering layer — each layer gets a translucent
+  background wash and the washes compound where layers overlap, so depth reads as a deeper tint with
+  no CSS blending tricks. Underlines were removed at the user's request; the tint carries the depth
+  instead of a decoration under the text.
 - **Performance**: `runAnalysis` is a pure `useMemo` fed by `useDeferredValue(text)`, so typing never
   blocks on analysis.
 - **Layout contract**: a splitter is the only thing that sizes a pane. The controlled side is
