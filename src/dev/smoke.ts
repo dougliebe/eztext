@@ -11,6 +11,7 @@
  */
 import { buildHeatmap, type HeatMetricId, type HeatSpan } from '../core/heatmap';
 import { scoreWindow, summarise, surprisalIntensity } from '../core/surprisal';
+import { surprisalTool } from '../tools/surprisal.tool';
 import { runAnalysis } from '../core/engine';
 import {
   computeMetrics,
@@ -484,6 +485,114 @@ function main(): void {
       surprisalIntensity(10, 10) === 1 &&
       surprisalIntensity(999, 10) === 1 &&
       surprisalIntensity(5, 0) === 0,
+  );
+
+  console.log(`\n${RULE}\nSurprisal tool`);
+
+  const toolText = 'A B C D';
+  const toolIds = [0, 1, 2, 3];
+  const toolPieces = ['A', ' B', ' C', ' D'];
+  const toolLogits = new Float32Array(toolIds.length * probeVocab);
+  toolLogits[0 * probeVocab + 1] = 8;
+  toolLogits[1 * probeVocab + 3] = 8;
+  toolLogits[2 * probeVocab + 3] = 8;
+  const toolDecode = (id: number) => toolPieces[id] ?? '?';
+  const scoredTokens = scoreWindow({
+    logits: toolLogits,
+    positions: toolIds.length,
+    vocab: probeVocab,
+    ids: toolIds,
+    decode: toolDecode,
+    topK: 4,
+  });
+  const scoredAll = summarise(scoredTokens, toolText, 'test-model');
+
+  const runTool = (signals?: { surprisal?: typeof scoredAll; surprisalText?: string }, options = {}) =>
+    surprisalTool.run({ text: toolText, options, signals });
+
+  const unscored = runTool();
+  check(
+    'without signals the tool reports status instead of failing',
+    (unscored.annotations ?? []).length === 0 && unscored.stats?.[0].value === 'Not scored yet',
+    `${unscored.stats?.[0].label}: ${unscored.stats?.[0].value}`,
+  );
+
+  const staleResult = runTool({ surprisal: scoredAll, surprisalText: 'something else entirely' });
+  check(
+    'scores for a different document are refused',
+    (staleResult.annotations ?? []).length === 0 && staleResult.stats?.[0].value === 'Text changed',
+    `${staleResult.stats?.[0].value} / ${staleResult.stats?.[0].hint}`,
+  );
+
+  const scored = runTool({ surprisal: scoredAll, surprisalText: toolText });
+  const annotations = scored.annotations ?? [];
+  check(
+    'a scored document yields one shaded annotation per word',
+    annotations.length === 4 && annotations[0].start === 0 && annotations[3].end === toolText.length,
+    `${annotations.length} annotations covering ${annotations.map((a) => `"${a.label}"`).join(' ')}`,
+  );
+  check(
+    'each annotation carries its own gradient colour',
+    annotations.every((annotation) => /^#[0-9a-f]{6}$/.test(annotation.color ?? '')) &&
+      new Set(annotations.map((annotation) => annotation.color)).size > 1,
+    [...new Set(annotations.map((a) => a.color))].join(' '),
+  );
+  check(
+    'the surprising word is shaded hotter than the expected one',
+    // " C" costs ~11.5 bits, " D" ~0 — compare their ramp positions by luminance.
+    parseHex(annotations[2].color!).reduce((sum, v) => sum + v, 0) >
+      parseHex(annotations[3].color!).reduce((sum, v) => sum + v, 0),
+    `" C"=${annotations[2].color} vs " D"=${annotations[3].color}`,
+  );
+  check(
+    'the detail names the word the model expected',
+    (annotations[2].detail ?? '').includes('“D”'),
+    annotations[2].detail,
+  );
+  check(
+    'stats summarise the run',
+    (scored.stats ?? []).some((stat) => stat.id === 'surprisal.mean') &&
+      (scored.stats ?? []).some((stat) => stat.id === 'surprisal.offenders' && String(stat.value).includes('C')),
+    (scored.stats ?? []).map((stat) => `${stat.label}=${stat.value}`).join('  '),
+  );
+
+  // Only surprising words when asked.
+  const onlySurprising = runTool({ surprisal: scoredAll, surprisalText: toolText }, { shade: 'surprising', notable: 5 });
+  check(
+    'the “only surprising words” option filters the shading',
+    (onlySurprising.annotations ?? []).length === 1 && onlySurprising.annotations?.[0].label === 'C',
+    `${(onlySurprising.annotations ?? []).map((a) => a.label).join(', ')} (${(onlySurprising.annotations ?? []).length} of 4 words above 5 bits)`,
+  );
+
+  // The engine must honour a tool's per-annotation colour.
+  const withTool = runAnalysis({
+    tools: [surprisalTool],
+    text: toolText,
+    enabled: { surprisal: true },
+    options: {},
+    signals: { surprisal: scoredAll, surprisalText: toolText },
+  });
+  check(
+    'the engine keeps per-annotation colours',
+    withTool.annotations.length === 4 &&
+      withTool.annotations.every((annotation) => annotation.color !== surprisalTool.color),
+    `${withTool.annotations.length} annotations, tool colour ${surprisalTool.color}`,
+  );
+  const withoutSignals = runAnalysis({
+    tools: [surprisalTool],
+    text: toolText,
+    enabled: { surprisal: true },
+    options: {},
+  });
+  check(
+    'the engine runs a signal-hungry tool without signals',
+    withoutSignals.annotations.length === 0 && withoutSignals.stats.length > 0,
+    `${withoutSignals.stats.length} stat card(s)`,
+  );
+  check(
+    'the tool declares what it needs',
+    (surprisalTool.requires ?? []).includes('surprisal'),
+    (surprisalTool.requires ?? []).join(', ') || '(nothing declared)',
   );
 
   console.log(`\n${RULE}\nOverlap & invariants`);

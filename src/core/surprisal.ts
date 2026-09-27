@@ -85,6 +85,8 @@ export interface SurprisalScores {
    * which would mean the offsets are unreliable (non-UTF-8 input, mainly).
    */
   offsetsExact: boolean;
+  /** Set by the scoring process when the document needed more than one window. */
+  chunked?: boolean;
 }
 
 const LN2 = Math.LN2;

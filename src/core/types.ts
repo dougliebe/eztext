@@ -8,6 +8,8 @@
  * responsible for resolving overlaps into renderable segments.
  */
 
+import type { SurprisalScores } from './surprisal';
+
 /** A half-open range `[start, end)` of character offsets into the document. */
 export interface TextRange {
   start: number;
@@ -35,6 +37,12 @@ export interface AnnotationDraft extends TextRange {
   label?: string;
   group?: string;
   detail?: string;
+  /**
+   * Override the tool's colour for this annotation. Lets a tool emit a
+   * *gradient* — the surprisal tool shades each word by its own value rather
+   * than giving every match the same hue. Must be a hex colour.
+   */
+  color?: string;
   data?: Record<string, unknown>;
 }
 
@@ -117,11 +125,29 @@ export type ToolOption =
 export type ToolOptionValue = boolean | number | string;
 export type ToolOptions = Record<string, ToolOptionValue>;
 
+/**
+ * Data a tool cannot compute itself.
+ *
+ * Signals are produced *outside* the engine — currently by the local model
+ * process — and handed to tools through their context. That keeps
+ * `runAnalysis` a pure synchronous function which is what makes the smoke test
+ * trivial and keeps typing from ever waiting on a model.
+ */
+export type SignalId = 'surprisal';
+
+export interface ToolSignals {
+  surprisal?: SurprisalScores;
+  /** The document the signals were computed from; tools must not trust stale data. */
+  surprisalText?: string;
+}
+
 export interface ToolContext {
   /** The full document text. */
   text: string;
   /** Options merged with the tool's declared defaults. */
   options: ToolOptions;
+  /** Whatever the declared `requires` asked for. Absent until it has been fetched. */
+  signals?: ToolSignals;
 }
 
 export interface Tool {
@@ -136,7 +162,14 @@ export interface Tool {
   defaultEnabled?: boolean;
   /** Declared options — rendered generically by the toolbar. */
   options?: ToolOption[];
-  /** Pure function of `(text, options)`. No side effects, no DOM access. */
+  /**
+   * External data this tool needs before it can run. The app fetches whatever
+   * is declared here (and shows a Run control while waiting); a tool whose
+   * signals are missing must degrade to a "not scored yet" result rather than
+   * throwing.
+   */
+  requires?: SignalId[];
+  /** Pure function of `(text, options, signals)`. No side effects, no DOM access. */
   run(ctx: ToolContext): ToolResult;
 }
 

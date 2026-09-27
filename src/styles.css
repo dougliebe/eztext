@@ -1510,6 +1510,19 @@ button {
   text-decoration: underline;
 }
 
+/* The Run control reports model state, so it needs two more states. */
+.btn--danger {
+  border-color: #c0000066;
+  background: #c0000014;
+  color: var(--bad);
+}
+
+.btn--stale {
+  border-color: #8a5a0066;
+  background: #8a5a0014;
+  color: var(--warn);
+}
+
 .btn--sm {
   padding: 2px 7px;
   font-size: 9.5px;
@@ -1529,6 +1542,211 @@ button {
 
 .toggle input {
   accent-color: var(--bg-4);
+}
+
+/* ==========================================================================
+   Selection inspector (pinned above the results)
+   ========================================================================== */
+
+.selection {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+  padding: 8px 12px 10px;
+}
+
+.selection__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.selection__eyebrow {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.selection__word {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-strong);
+}
+
+.selection__bits {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--bad);
+}
+
+.selection__range {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.selection__close {
+  margin-left: auto;
+}
+
+.selection__context {
+  margin: 6px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.selection__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.selection__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.selection__stat {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  min-width: 84px;
+}
+
+.selection__stat--warn .selection__stat-value {
+  color: var(--warn);
+}
+
+.selection__stat-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.selection__stat-value {
+  font-size: 13px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.selection__detail {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.selection__detail code {
+  font-family: var(--font-mono);
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.selection__hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* Alternatives table: what the model predicted instead. */
+.alts {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.alts th {
+  text-align: left;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding: 2px 6px 3px;
+}
+
+.alts td {
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--bg-3);
+  vertical-align: middle;
+}
+
+.alts__row--written {
+  background: var(--accent-soft);
+}
+
+.alts__rank {
+  width: 24px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.alts__word {
+  font-family: var(--font-mono);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.alts__tag {
+  margin-left: 6px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
+.alts__prob {
+  width: 38%;
+  white-space: nowrap;
+}
+
+.alts__bar {
+  display: inline-block;
+  height: 8px;
+  background: var(--accent);
+  opacity: 0.5;
+  vertical-align: middle;
+}
+
+.alts__pct {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.alts__bits,
+.alts__gain {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  width: 76px;
+}
+
+.alts__bits {
+  color: var(--muted);
+}
+
+.alts__gain {
+  color: var(--warn);
+}
+
+.alts__row--written .alts__gain {
+  color: var(--muted);
 }
 
 /* ==========================================================================

@@ -14,6 +14,7 @@ import type {
   Tool,
   ToolOptions,
   ToolRun,
+  ToolSignals,
 } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -50,6 +51,8 @@ export interface RunInput {
   text: string;
   enabled: Record<string, boolean>;
   options: Record<string, ToolOptions>;
+  /** External data for tools that declare `requires`. See `ToolSignals`. */
+  signals?: ToolSignals;
 }
 
 function normalise(
@@ -74,11 +77,13 @@ function normalise(
     end,
     text: covered,
     label: annotation.label || covered,
-    color: tool.color,
+    // A tool may shade each annotation individually (gradients); otherwise it
+    // gets its single declared colour.
+    color: annotation.color ?? tool.color,
   };
 }
 
-export function runAnalysis({ tools, text, enabled, options }: RunInput): AnalysisRun {
+export function runAnalysis({ tools, text, enabled, options, signals }: RunInput): AnalysisRun {
   const startedAt = performance.now();
 
   const byTool: Record<string, ToolRun> = {};
@@ -92,7 +97,7 @@ export function runAnalysis({ tools, text, enabled, options }: RunInput): Analys
 
     let result;
     try {
-      result = tool.run({ text, options: resolveOptions(tool, options[tool.id]) });
+      result = tool.run({ text, options: resolveOptions(tool, options[tool.id]), signals });
     } catch (error) {
       result = {
         notes: [

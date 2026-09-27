@@ -79,3 +79,18 @@ export function heatGradient(): string {
   const stops = HEAT_STOPS.map(([at, color]) => `${color} ${Math.round(at * 100)}%`).join(', ');
   return `linear-gradient(90deg, ${stops})`;
 }
+
+/**
+ * Interpolate the heat ramp and return a hex colour.
+ *
+ * Tools emit hex because the highlight renderer blends each annotation's colour
+ * with its own alpha (`withAlpha` parses hex), so a tool that shades items
+ * individually has to hand over `#rrggbb`, not `rgb(...)`.
+ */
+export function heatHex(t: number): string {
+  const rgb = heatColor(t).match(/\d+/g) ?? ['128', '128', '128'];
+  return `#${rgb
+    .slice(0, 3)
+    .map((channel) => Number(channel).toString(16).padStart(2, '0'))
+    .join('')}`;
+}

@@ -22,6 +22,8 @@ interface ResultsPaneProps {
   selectedId: string | null;
   onHover: (id: string | null) => void;
   onSelect: (annotation: ResolvedAnnotation) => void;
+  /** Selection inspector, pinned above the tab content. */
+  selection?: React.ReactNode;
 }
 
 export function ResultsPane({
@@ -34,6 +36,7 @@ export function ResultsPane({
   selectedId,
   onHover,
   onSelect,
+  selection,
 }: ResultsPaneProps) {
   const statsByTool = useMemo(() => {
     const map = new Map<string, Stat[]>();
@@ -81,6 +84,7 @@ export function ResultsPane({
       </header>
 
       <div className="pane__body">
+        {selection}
         {activeTools.length === 0 ? (
           <div className="empty">
             <p className="empty__title">No tools enabled</p>

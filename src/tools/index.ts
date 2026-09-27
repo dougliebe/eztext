@@ -7,11 +7,12 @@
  */
 import type { Tool } from '../core/types';
 import { readabilityTool } from './readability.tool';
+import { surprisalTool } from './surprisal.tool';
 
-export const tools: Tool[] = [readabilityTool];
+export const tools: Tool[] = [readabilityTool, surprisalTool];
 
 export function getTool(id: string): Tool | undefined {
   return tools.find((tool) => tool.id === id);
 }
 
-export { readabilityTool };
+export { readabilityTool, surprisalTool };

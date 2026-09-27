@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { CoverageStrip } from './components/CoverageStrip';
 import { HeatmapView } from './components/HeatmapView';
 import { HighlightView } from './components/HighlightView';
@@ -9,13 +9,33 @@ import { Toolbar } from './components/Toolbar';
 import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
 import { heatGradient } from './core/color';
 import { buildHeatmap, HEAT_METRICS, type HeatMetricId, type HeatMetricInfo } from './core/heatmap';
+import { checkHealth, ModelOfflineError, scoreText } from './core/model-client';
 import { computeMetrics, describeNorm, deviationColor, EASY_PERCENTILE, formatPercentile, formatZ, MIN_COMPARABLE_WORDS, NOTABLE_PERCENTILE, percentileFromZ, zScore } from './core/metrics';
+import type { SurprisalScores } from './core/surprisal';
+import type { ToolSignals } from './core/types';
 import { CLEAR_CORPUS, type MetricNorm } from './core/data/corpus-norms';
 import { usePersistentState } from './core/persistence';
 import { compactNumber, round } from './core/text';
 import type { ResolvedAnnotation, ToolOptionValue, ToolOptions } from './core/types';
 import { SAMPLE_TEXT } from './sample-text';
 import { getTool, tools } from './tools';
+import { SelectionCard } from './components/SelectionCard';
+
+/**
+ * State of the local model, driven by the Run button in the input pane.
+ *
+ * There is deliberately no debounce and no scoring on keystroke: a forward pass
+ * costs hundreds of milliseconds to a few seconds, so the user decides when to
+ * pay for it. Editing after a run leaves the scores in place but marks them
+ * stale, and stale scores are withheld from the tools — shading the wrong words
+ * would be worse than shading none.
+ */
+type RunState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'ready' }
+  | { status: 'offline'; message: string }
+  | { status: 'error'; message: string };
 
 export default function App() {
   const [text, setText] = usePersistentState('text', SAMPLE_TEXT);
@@ -36,14 +56,72 @@ export default function App() {
   const [openToolId, setOpenToolId] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // The model is explicit: scored text is held with the exact string it came
+  // from, so staleness is a string comparison rather than a guess.
+  const [runState, setRunState] = useState<RunState>({ status: 'idle' });
+  const [scores, setScores] = useState<(SurprisalScores & { modelMs: number }) | null>(null);
+  const [scoredText, setScoredText] = useState<string | null>(null);
+  const [health, setHealth] = useState<{ ready: boolean; loading: boolean } | null>(null);
+
   // Analysis is kept off the typing critical path: the textarea always updates
   // immediately, and React re-runs the pipeline in a transition when it can.
   const deferredText = useDeferredValue(text);
 
-  const analysis = useMemo(
-    () => runAnalysis({ tools, text: deferredText, enabled, options }),
-    [deferredText, enabled, options],
+  /** Which signals the enabled tools actually want. */
+  const neededSignals = useMemo(() => {
+    const needed = new Set<string>();
+    for (const tool of tools) {
+      if (!isToolEnabled(tool, enabled)) continue;
+      for (const signal of tool.requires ?? []) needed.add(signal);
+    }
+    return needed;
+  }, [enabled]);
+
+  const freshScores = scoredText !== null && scoredText === deferredText ? scores : null;
+  const isStale = scoredText !== null && scoredText !== deferredText;
+
+  const signals: ToolSignals | undefined = useMemo(
+    () =>
+      neededSignals.has('surprisal') && freshScores
+        ? { surprisal: freshScores, surprisalText: scoredText ?? undefined }
+        : undefined,
+    [neededSignals, freshScores, scoredText],
   );
+
+  const analysis = useMemo(
+    () => runAnalysis({ tools, text: deferredText, enabled, options, signals }),
+    [deferredText, enabled, options, signals],
+  );
+
+  // Is the model process up? Checked once, then only after failures or a run.
+  const probeModel = useCallback(async () => {
+    const result = await checkHealth();
+    setHealth(result ? { ready: result.ready, loading: result.loading } : null);
+    return result;
+  }, []);
+
+  const runModel = useCallback(async () => {
+    const target = text;
+    setRunState({ status: 'running' });
+    try {
+      const result = await scoreText(target);
+      setScores(result);
+      setScoredText(target);
+      setRunState({ status: 'ready' });
+      setHealth({ ready: true, loading: false });
+    } catch (error) {
+      const offline = error instanceof ModelOfflineError;
+      if (offline) setHealth(null);
+      setRunState({
+        status: offline ? 'offline' : 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [text]);
+
+  useEffect(() => {
+    void probeModel();
+  }, [probeModel]);
 
   const doc = useMemo(() => computeMetrics(deferredText), [deferredText]);
 
@@ -236,6 +314,15 @@ export default function App() {
                   setText('');
                   setSelectedId(null);
                 }}
+                run={{
+                  status: runState.status,
+                  stale: isStale,
+                  needed: neededSignals.size > 0,
+                  online: health ? health.ready : runState.status === 'offline' ? false : null,
+                  message: 'message' in runState ? runState.message : undefined,
+                  elapsedMs: scores?.modelMs,
+                  onRun: () => void runModel(),
+                }}
               />
             </div>
 
@@ -312,6 +399,14 @@ export default function App() {
             selectedId={selectedId}
             onHover={setHoverId}
             onSelect={selectFromList}
+            selection={
+              <SelectionCard
+                selection={selectedAnnotation}
+                scores={freshScores}
+                text={deferredText}
+                onClose={() => setSelectedId(null)}
+              />
+            }
           />
         </div>
       </main>

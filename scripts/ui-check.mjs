@@ -254,15 +254,43 @@ const overlap = await page.evaluate(() => {
   const top = document.querySelector('.workbench__top').getBoundingClientRect();
   const bottom = document.querySelector('.workbench__bottom').getBoundingClientRect();
   const text = document.querySelector('.input__area').getBoundingClientRect();
-  const toggle = document.querySelector('.tool-panel__toggle');
-  const toggleBox = toggle ? toggle.getBoundingClientRect() : null;
+
+  // Hit-testing, not rect comparison: the results body is a scroll container, so
+  // its first child can sit geometrically above the pane while being clipped and
+  // perfectly un-clickable. What matters is whether anything from the top pane
+  // can actually receive a pointer down here.
+  const probes = [
+    [bottom.left + bottom.width / 2, bottom.top + 12],
+    [bottom.left + 40, bottom.top + 40],
+    [bottom.left + bottom.width - 40, bottom.top + 40],
+  ];
+  const hits = probes.map(([x, y]) => {
+    const node = document.elementFromPoint(x, y);
+    return {
+      insideResults: Boolean(node?.closest('.workbench__bottom')),
+      what: node ? `${node.tagName.toLowerCase()}.${String(node.className).split(' ')[0]}` : 'none',
+    };
+  });
+
   return {
     panesOverlap: top.bottom > bottom.top + 1,
-    textareaCoversToggle: Boolean(toggleBox && text.bottom > toggleBox.top && text.top < toggleBox.bottom),
+    inputCovers: hits.some((hit) => !hit.insideResults),
+    hits,
+    where: {
+      textarea: `${Math.round(text.top)}–${Math.round(text.bottom)}`,
+      topPane: `${Math.round(top.top)}–${Math.round(top.bottom)}`,
+      bottomPane: `${Math.round(bottom.top)}–${Math.round(bottom.bottom)}`,
+      bodyScroll: Math.round(document.querySelector('.pane--results .pane__body')?.scrollTop ?? 0),
+      panels: document.querySelectorAll('.tool-panel').length,
+    },
   };
 });
-check('input and results panes do not overlap', !overlap.panesOverlap);
-check('the input textarea does not cover the results pane', !overlap.textareaCoversToggle);
+check('input and results panes do not overlap', !overlap.panesOverlap, JSON.stringify(overlap.where));
+check(
+  'nothing from the input pane covers the results pane',
+  !overlap.inputCovers,
+  overlap.hits.map((hit) => hit.what).join(', '),
+);
 
 for (const tab of ['Stats', 'JSON', 'Results']) {
   await tryClick(page.locator('.tab', { hasText: new RegExp(`^${tab}`) }));
@@ -401,6 +429,106 @@ check(
   simplePolys.tone === 'good',
   `z ${simplePolys.z} → p${simplePolys.percentile} (${simplePolys.tone})`,
 );
+
+// --- 8. the surprisal model, if it is running -----------------------------
+// Skipped when the local model process is absent, so the suite still runs
+// anywhere. Start it with `npm run model` to include these.
+const health = await fetch(`${baseUrl}/api/model/health`)
+  .then((response) => (response.ok ? response.json() : null))
+  .catch(() => null);
+
+if (!health?.ready) {
+  console.log(`\n  (skipping ${7} model checks — start \`npm run model\` to include them)`);
+} else {
+  await page.fill('.input__area', '');
+  await page.fill(
+    '.input__area',
+    'Most writers revise. They cut adjectives, and they move the important words toward the front of the clause. ' +
+      'Nevertheless, the writers who revise consistently produce prose that readers understand immediately.',
+  );
+  await page.waitForTimeout(300);
+
+  const runButton = page.locator('.pane--input .btn', { hasText: /Run model|Re-run|Scoring/ });
+  check('the input bar offers a Run control', (await runButton.count()) === 1, await runButton.first().textContent());
+
+  const beforeRun = await page.locator('.hl[data-tool="surprisal"]').count();
+  check('nothing is shaded before running', beforeRun === 0, `${beforeRun} shaded words`);
+
+  await runButton.first().click();
+  await page.waitForFunction(
+    () => /Re-run/.test(document.querySelector('.pane--input .btn')?.textContent ?? ''),
+    undefined,
+    { timeout: 90_000 },
+  );
+  await page.waitForTimeout(400);
+
+  const shaded = await page.locator('.hl[data-tool="surprisal"]').count();
+  check('running shades every word', shaded > 20, `${shaded} shaded words`);
+  check(
+    'the surprisal panel reports model statistics',
+    (await page.locator('.tool-panel', { hasText: 'Surprisal' }).locator('.stat').count()) >= 6,
+  );
+
+  // Editing must invalidate the scores rather than shade stale ranges.
+  await page.fill('.input__area', 'A completely different sentence now replaces all of that text entirely.');
+  await page.waitForTimeout(500);
+  const afterEdit = await page.locator('.hl[data-tool="surprisal"]').count();
+  const runLabel = await page.locator('.pane--input .btn').first().textContent();
+  check('editing withholds the stale scores', afterEdit === 0, `${afterEdit} shaded words, button says “${runLabel}”`);
+  check('and the Run control says so', /edited/i.test(runLabel ?? ''), runLabel ?? '');
+
+  // Back to a scored document, then select the hardest word.
+  await page.fill('.input__area', 'Most writers revise. They cut adjectives, and they move the important words.');
+  await page.waitForTimeout(200);
+  await runButton.first().click();
+  await page.waitForFunction(
+    () => /Re-run/.test(document.querySelector('.pane--input .btn')?.textContent ?? ''),
+    undefined,
+    { timeout: 90_000 },
+  );
+  await page.waitForTimeout(400);
+
+  const hardest = await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('.hl[data-tool="surprisal"]')];
+    const ranked = nodes
+      .map((node) => ({ text: node.textContent.trim(), bits: Number((node.getAttribute('title') ?? '').match(/([\d.]+) bits/)?.[1] ?? 0) }))
+      .sort((a, b) => b.bits - a.bits);
+    return ranked[0] ?? null;
+  });
+
+  await page.locator('.hl[data-tool="surprisal"]', { hasText: hardest.text }).first().click();
+  await page.waitForSelector('.selection', { timeout: 5000 });
+  await page.waitForTimeout(200);
+
+  const card = await page.evaluate(() => ({
+    word: document.querySelector('.selection__word')?.textContent,
+    bits: document.querySelector('.selection__bits')?.textContent,
+    rows: [...document.querySelectorAll('.alts tbody tr')].map((tr) =>
+      [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()),
+    ),
+    detail: document.querySelector('.selection__detail')?.textContent ?? '',
+  }));
+
+  check(
+    'selecting a word shows what the model predicted instead',
+    card.rows.length >= 3 && card.rows.every((row) => row.length === 5),
+    `${card.rows.length} alternatives for “${card.word}” (${card.bits})`,
+  );
+  check(
+    'alternatives are ranked by probability',
+    card.rows.every((row, index) => {
+      if (index === 0) return true;
+      const asNumber = (value) => Number(value.replace('%', '').replace(/e-?\d+/, (m) => m)) || 0;
+      return asNumber(row[2]) <= asNumber(card.rows[index - 1][2]);
+    }),
+    card.rows.map((row) => `${row[1]}=${row[2]}`).join(' '),
+  );
+  check('the card names the expected word', /expected/.test(card.detail), card.detail.slice(0, 120));
+
+  await page.locator('.selection__close').click();
+  await page.waitForTimeout(150);
+  check('the card can be dismissed', (await page.locator('.selection').count()) === 0);
+}
 
 await browser.close();
 console.log(`\n  ${failures === 0 ? 'all checks passed' : `${failures} CHECK(S) FAILED`}\n`);

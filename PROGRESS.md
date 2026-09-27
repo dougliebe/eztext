@@ -105,12 +105,15 @@
   (a tool throwing) and renders only for `tone: 'bad'`.
 - Top pane (input + preview) defaults to 62% of the workbench height; layout keys are versioned so
   changed defaults reach existing sessions.
+- **Surprisal is in the toolbar** as a real tool with one annotation per word, each carrying its own
+  colour from the heat ramp (`AnnotationDraft.color`). Selecting a shaded word pins an inspector
+  at the top of the results pane showing the model's whole distribution at that position (probability
+  bars, bits, bits saved) and which of them was the word actually written.
 
 ## Next steps
-- **Wire surprisal into the UI**: it is computed and served but nothing renders it yet. Plan: add
-  'Surprisal' and 'Perturbation' as selectable preview modes (they are per-word intensities, exactly the
-  heatmap shape) plus a results table of the top offenders with the model's preferred alternative; the
-  client needs a debounced fetch to /api/model/score and a 'model not running' state.
+- Optional: perturbation as its own visual channel (the model's expected word underlined on the shaded
+  word) — the data is already in the tool's annotations as `data.gain`.
+- Surprisal windows arrive all at once; streaming them per window would give progress on long documents.
 
 - An "unfamiliar words" tool that highlights exactly what `% unfamiliar` counts, reusing
   `isFamiliarWord` — makes the topbar number explainable and is the obvious companion to it.
