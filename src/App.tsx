@@ -1,0 +1,257 @@
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
+import { CoverageStrip } from './components/CoverageStrip';
+import { HighlightView } from './components/HighlightView';
+import { InputPane } from './components/InputPane';
+import { ResultsPane, type TabId } from './components/ResultsPane';
+import { Splitter } from './components/Splitter';
+import { Toolbar } from './components/Toolbar';
+import { countsByTool, isToolEnabled, runAnalysis } from './core/engine';
+import { usePersistentState } from './core/persistence';
+import { compactNumber, round, splitParagraphs, splitSentences, tokenizeWords } from './core/text';
+import type { ResolvedAnnotation, ToolOptionValue, ToolOptions } from './core/types';
+import { SAMPLE_TEXT } from './sample-text';
+import { getTool, tools } from './tools';
+
+const WORDS_PER_MINUTE = 200;
+
+export default function App() {
+  const [text, setText] = usePersistentState('text', SAMPLE_TEXT);
+  const [enabled, setEnabled] = usePersistentState<Record<string, boolean>>('enabled', {});
+  const [options, setOptions] = usePersistentState<Record<string, ToolOptions>>('options', {});
+  // Layout keys are versioned so a changed default actually reaches users who
+  // already have a ratio persisted from an earlier session.
+  const [topRatio, setTopRatio] = usePersistentState('layout.v3.top', 0.62);
+  const [leftRatio, setLeftRatio] = usePersistentState('layout.v3.left', 0.42);
+  const [wrap, setWrap] = usePersistentState('input.wrap', true);
+
+  const [tab, setTab] = useState<TabId>('results');
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openToolId, setOpenToolId] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  // Analysis is kept off the typing critical path: the textarea always updates
+  // immediately, and React re-runs the pipeline in a transition when it can.
+  const deferredText = useDeferredValue(text);
+
+  const analysis = useMemo(
+    () => runAnalysis({ tools, text: deferredText, enabled, options }),
+    [deferredText, enabled, options],
+  );
+
+  const activeTools = useMemo(() => tools.filter((tool) => isToolEnabled(tool, enabled)), [enabled]);
+
+  const counts = useMemo(() => countsByTool(analysis), [analysis]);
+
+  const doc = useMemo(() => {
+    const words = tokenizeWords(deferredText).length;
+    return {
+      words,
+      sentences: splitSentences(deferredText).length,
+      paragraphs: splitParagraphs(deferredText).length,
+      characters: deferredText.length,
+      readMinutes: round(words / WORDS_PER_MINUTE, 0),
+    };
+  }, [deferredText]);
+
+  const toggleTool = useCallback(
+    (id: string) => {
+      const tool = getTool(id);
+      setEnabled((previous) => {
+        const current = previous[id] ?? tool?.defaultEnabled ?? false;
+        return { ...previous, [id]: !current };
+      });
+    },
+    [setEnabled],
+  );
+
+  const changeOption = useCallback(
+    (toolId: string, optionId: string, value: ToolOptionValue) => {
+      setOptions((previous) => ({
+        ...previous,
+        [toolId]: { ...(previous[toolId] ?? {}), [optionId]: value },
+      }));
+    },
+    [setOptions],
+  );
+
+  const resetOptions = useCallback(
+    (toolId: string) => {
+      setOptions((previous) => {
+        const next = { ...previous };
+        delete next[toolId];
+        return next;
+      });
+    },
+    [setOptions],
+  );
+
+  const disableAll = useCallback(() => {
+    setEnabled(Object.fromEntries(tools.map((tool) => [tool.id, false])));
+  }, [setEnabled]);
+
+  const revealInPreview = useCallback((annotation: ResolvedAnnotation) => {
+    window.requestAnimationFrame(() => {
+      const node = previewRef.current?.querySelector(`[data-ann="${CSS.escape(annotation.id)}"]`);
+      node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  }, []);
+
+  const selectFromList = useCallback(
+    (annotation: ResolvedAnnotation) => {
+      setSelectedId(annotation.id);
+      setHoverId(null);
+      setTab('results');
+      revealInPreview(annotation);
+    },
+    [revealInPreview],
+  );
+
+  const selectFromPreview = useCallback((annotation: ResolvedAnnotation) => {
+    setSelectedId(annotation.id);
+    setHoverId(null);
+    setTab('results');
+  }, []);
+
+  const selectedAnnotation = useMemo(
+    () => analysis.annotations.find((annotation) => annotation.id === selectedId) ?? null,
+    [analysis.annotations, selectedId],
+  );
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand__mark" aria-hidden="true">
+            ez
+          </span>
+          <div className="brand__text">
+            <h1 className="brand__name">eztext</h1>
+            <p className="brand__tag">overlapping text analysis, one extension at a time</p>
+          </div>
+        </div>
+
+        <dl className="metrics">
+          <Metric label="Words" value={compactNumber(doc.words)} />
+          <Metric label="Sentences" value={compactNumber(doc.sentences)} />
+          <Metric label="Paragraphs" value={compactNumber(doc.paragraphs)} />
+          <Metric label="Characters" value={compactNumber(doc.characters)} />
+          <Metric label="Read time" value={`${doc.readMinutes} min`} />
+          <Metric label="Annotations" value={compactNumber(analysis.annotations.length)} tone="accent" />
+        </dl>
+      </header>
+
+      <Toolbar
+        tools={tools}
+        enabled={enabled}
+        options={options}
+        counts={counts}
+        openToolId={openToolId}
+        onOpenTool={setOpenToolId}
+        onToggle={toggleTool}
+        onOptionChange={changeOption}
+        onResetOptions={resetOptions}
+        onDisableAll={disableAll}
+      />
+
+      <main className="workbench">
+        <div className="workbench__top" style={{ height: `${topRatio * 100}%` }}>
+          <div className="workbench__row">
+            <div className="workbench__column" style={{ width: `${leftRatio * 100}%` }}>
+              <InputPane
+                text={text}
+                onChange={setText}
+                wrap={wrap}
+                onToggleWrap={() => setWrap((value) => !value)}
+                onLoadSample={() => setText(SAMPLE_TEXT)}
+                onClear={() => {
+                  setText('');
+                  setSelectedId(null);
+                }}
+              />
+            </div>
+
+            <Splitter axis="x" ratio={leftRatio} onChange={setLeftRatio} label="Resize input and preview" min={0.2} max={0.8} />
+
+            <section className="pane pane--preview">
+              <header className="pane__header">
+                <h2 className="pane__title">Preview</h2>
+                <span className="pane__hint">
+                  {analysis.annotations.length} highlights · {analysis.segments.length} segments
+                </span>
+                <div className="legend" aria-label="Active tools">
+                  {activeTools.map((tool) => (
+                    <span className="legend__item" key={tool.id}>
+                      <span className="legend__swatch" style={{ backgroundColor: tool.color }} aria-hidden="true" />
+                      {tool.name}
+                    </span>
+                  ))}
+                </div>
+              </header>
+
+              <div className="pane__body pane__body--preview" ref={previewRef}>
+                <HighlightView
+                  text={deferredText}
+                  segments={analysis.segments}
+                  hoverId={hoverId}
+                  selectedId={selectedId}
+                  onHover={setHoverId}
+                  onSelect={selectFromPreview}
+                />
+              </div>
+
+              <CoverageStrip
+                textLength={deferredText.length}
+                activeTools={activeTools}
+                byToolAnnotations={analysis.byToolAnnotations}
+                hoverId={hoverId}
+                selectedId={selectedId}
+                onHover={setHoverId}
+                onSelect={selectFromList}
+              />
+            </section>
+          </div>
+        </div>
+
+        <Splitter axis="y" ratio={topRatio} onChange={setTopRatio} label="Resize input and results" min={0.18} max={0.82} />
+
+        <div className="workbench__bottom">
+          <ResultsPane
+            text={deferredText}
+            activeTools={activeTools}
+            analysis={analysis}
+            tab={tab}
+            onTabChange={setTab}
+            hoverId={hoverId}
+            selectedId={selectedId}
+            onHover={setHoverId}
+            onSelect={selectFromList}
+          />
+        </div>
+      </main>
+
+      <footer className="statusbar">
+        <span>
+          {activeTools.length} of {tools.length} tools active
+        </span>
+        <span className="statusbar__sep">·</span>
+        <span>
+          {selectedAnnotation
+            ? `Selected: ${selectedAnnotation.toolName} — “${selectedAnnotation.label}” [${selectedAnnotation.start}–${selectedAnnotation.end}]`
+            : 'Click a highlight or a result row to inspect it'}
+        </span>
+        <span className="statusbar__spacer" />
+        <span>runs on every keystroke · {round(analysis.elapsedMs, 2)} ms</span>
+      </footer>
+    </div>
+  );
+}
+
+function Metric({ label, value, tone }: { label: string; value: string | number; tone?: 'accent' }) {
+  return (
+    <div className={`metric${tone ? ` metric--${tone}` : ''}`}>
+      <dt className="metric__label">{label}</dt>
+      <dd className="metric__value">{value}</dd>
+    </div>
+  );
+}
