@@ -45,12 +45,14 @@ export function ToolPanel({
   );
 
   // Only the groups that actually fired, in the same order as the filter pills.
-  const groupDescriptions = useMemo(() => {
-    const provided = result.groupDescriptions ?? {};
-    return groups.flatMap(([group]) =>
-      provided[group] ? [[group, provided[group]] as [string, string]] : [],
-    );
-  }, [groups, result.groupDescriptions]);
+  const groupNotes = useMemo(() => {
+    const descriptions = result.groupDescriptions ?? {};
+    const examples = result.groupExamples ?? {};
+    return groups.flatMap(([group]) => {
+      const description = descriptions[group];
+      return description ? [{ group, description, example: examples[group] }] : [];
+    });
+  }, [groups, result.groupDescriptions, result.groupExamples]);
 
   // Keep the clicked annotation visible in the list.
   useEffect(() => {
@@ -113,14 +115,17 @@ export function ToolPanel({
             </div>
           )}
 
-          {groupDescriptions.length > 0 && (
+          {groupNotes.length > 0 && (
             <details className="group-notes" open>
               <summary>What these groups mean</summary>
               <dl>
-                {groupDescriptions.map(([group, description]) => (
+                {groupNotes.map(({ group, description, example }) => (
                   <div className="group-notes__row" key={group}>
                     <dt>{group}</dt>
-                    <dd>{description}</dd>
+                    <dd>
+                      {description}
+                      {example && <span className="group-notes__example">e.g. {example}</span>}
+                    </dd>
                   </div>
                 ))}
               </dl>

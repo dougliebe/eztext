@@ -377,6 +377,22 @@ await page.waitForTimeout(150);
 heat = await heatState();
 check('the Clear button resets to tool highlighting', heat.heatSpans === 0 && heat.toolHighlights > 3);
 
+// --- 6b. the selection inspector explains the flagged group --------------
+// Clicking a highlight opens the inspector; it must say why the range fired,
+// and (when the tool supplies one) show the canonical fix for that group.
+await page.locator('.hl[data-tool="gsds"]').first().click();
+await page.waitForSelector('.selection', { timeout: 5000 });
+const inspector = await page.evaluate(() => ({
+  tool: document.querySelector('.selection__eyebrow')?.textContent ?? '',
+  detail: document.querySelector('.selection__detail')?.textContent ?? '',
+  example: document.querySelector('.selection__example')?.textContent ?? '',
+}));
+check('clicking a highlight opens the inspector', inspector.tool.length > 0, inspector.tool || 'none');
+check('the inspector names the rule that fired', inspector.detail.length > 0, inspector.detail.slice(0, 90));
+check('the inspector shows a fix example', inspector.example.includes('→'), inspector.example.slice(0, 110));
+await page.locator('.selection__close').click();
+await page.waitForTimeout(100);
+
 // --- 7. percentile tone bands --------------------------------------------
 // The sample text sits mid-distribution on every metric, so exercise the tails
 // with deliberately extreme documents.

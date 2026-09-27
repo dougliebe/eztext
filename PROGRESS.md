@@ -131,10 +131,12 @@
 - **Highlight renderer shows tint only** (user request): the stacked per-layer underlines are gone.
   Each nested layer still washes its own translucent background, and the washes compound on overlap,
   so depth remains visible without any decoration under the text.
-- **Every tool explains its groups** (`ToolResult.summary` + `groupDescriptions`): the results panel
-  renders one general line above the stats and a per-group “what this means / what to do” list under
-  the filter pills. GSDS states that density is not an error; Readability and Surprisal got
-  descriptions too. Smoke fails if a tool emits an annotation group with no explanation, and the
+- **Every tool explains its groups** (`ToolResult.summary` + `groupDescriptions` + `groupExamples`):
+  the results panel renders one general line above the stats and a per-group “what this means / what to
+  do / one canonical fix” list under the filter pills, and the selection inspector shows the fix
+  example for whatever was clicked. GSDS states that density is not an error; Readability and
+  Surprisal got descriptions too (Surprisal has no examples — its alternatives table is the fix).
+  Smoke fails if a group has no explanation or if examples cover only some of a tool's groups; the
   render check asserts the explanations reach the page.
 
 ## Next steps

@@ -110,6 +110,7 @@ export const echoTool: Tool = {
       ],
       summary: 'Higher counts mean more back-to-back repetition.',
       groupDescriptions: { echo: 'Two identical words in a row — a stutter or a typo.' },
+      groupExamples: { echo: '“the the plan” → “the plan”' },
     };
   },
 };
@@ -122,8 +123,9 @@ export const tools: Tool[] = [readabilityTool, echoTool];
 ```
 
 That's the whole cost of a new extension. You get a toolbar chip, a settings popover, per-tool stats,
-a summary and per-group explanations, group filters, a result list, coverage tracks, JSON export,
-hover/click syncing with the preview, and inclusion in `npm run smoke` for free.
+a summary and per-group explanations with one canonical fix example each, group filters, a result
+list, coverage tracks, JSON export, hover/click syncing with the preview, and inclusion in
+`npm run smoke` for free.
 
 ### Rules of thumb
 
@@ -135,9 +137,10 @@ hover/click syncing with the preview, and inclusion in `npm run smoke` for free.
   and the per-row tag.
 - **Explain inside `detail`, and explain the category once.** Every annotation carries a `detail`
   string shown on hover and in the row title — that is where a tool says *why* it fired on this range.
-  The optional `summary` and `groupDescriptions` fields say what the tool's numbers mean and what each
-  group is for; the results panel renders them once, so a reader is never left with unexplained
-  highlights. `npm run smoke` fails if a group has no description.
+  The optional `summary`, `groupDescriptions` and `groupExamples` fields say what the tool's numbers
+  mean, what each group is for, and one canonical before → after fix. The results panel renders the
+  descriptions, and the selection inspector shows the example for whatever was clicked. `npm run
+  smoke` fails if a group has no description, or if examples cover only some of a tool's groups.
 - **Shade items individually** with `AnnotationDraft.color` (any hex) and/or `AnnotationDraft.alpha` (0–1).
   Omit `alpha` and the renderer derives an opacity from the layer stacking, which is the right default for
   overlaps; supply `alpha: 1` for an opaque shade whose rendered colour is exactly the one you measured —

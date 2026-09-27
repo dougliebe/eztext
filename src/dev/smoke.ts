@@ -79,6 +79,16 @@ function main(): void {
       groups.every((group) => Boolean(described[group])),
       groups.map((group) => (described[group] ? group : `${group} (MISSING)`)).join(', ') || 'no groups',
     );
+
+    const examples = run.byTool[tool.id]?.result.groupExamples ?? {};
+    const exampleKeys = Object.keys(examples);
+    check(
+      `  ${tool.name}: fix examples cover every group when supplied`,
+      exampleKeys.length === 0 || groups.every((group) => Boolean(examples[group])),
+      exampleKeys.length === 0
+        ? 'none supplied'
+        : groups.map((group) => (examples[group] ? group : `${group} (MISSING)`)).join(', '),
+    );
   }
 
   console.log(`\n${RULE}\nDocument metrics`);
@@ -340,6 +350,14 @@ function main(): void {
     (auxiliaryRun.annotations ?? []).every(
       (annotation) => Boolean(annotation.group) && Boolean(annotation.detail),
     ),
+  );
+  check(
+    'every GSDS group carries a fix example',
+    ['modal', 'be/have', 'preposition', 'possessive', 'time-adverb', 'verbal', 'sub-clause', 't-unit'].every(
+      (group) =>
+        Boolean(auxiliaryRun.groupDescriptions?.[group]) && Boolean(auxiliaryRun.groupExamples?.[group]),
+    ),
+    Object.keys(auxiliaryRun.groupExamples ?? {}).join(', '),
   );
 
   console.log(`\n${RULE}\nCorpus comparison — ${CLEAR_CORPUS.name}, n=${CLEAR_CORPUS.n}`);

@@ -214,6 +214,13 @@ export default function App() {
     [analysis.annotations, selectedId],
   );
 
+  // The inspector shows the canonical fix for the selected annotation's group,
+  // if the tool supplied one.
+  const selectedGroupExample =
+    selectedAnnotation?.group
+      ? analysis.byTool[selectedAnnotation.toolId]?.result.groupExamples?.[selectedAnnotation.group]
+      : undefined;
+
   return (
     <div className="app">
       <header className="topbar">
@@ -404,6 +411,7 @@ export default function App() {
                 selection={selectedAnnotation}
                 scores={freshScores}
                 text={deferredText}
+                example={selectedGroupExample}
                 onClose={() => setSelectedId(null)}
               />
             }

@@ -37,6 +37,27 @@ const SUMMARY =
   'harder to read — not an error — and each group below says what it contributes and how a writer ' +
   'usually adjusts it.';
 
+/**
+ * One canonical before → after example per group. Generic on purpose: it shows
+ * the shape of the fix so the inspector can answer “what would I do about
+ * this?” without pretending to rewrite the user's text.
+ */
+const GROUP_EXAMPLES: Record<string, string> = {
+  modal: '“We might perhaps be able to help.” → “We can help.”',
+  'be/have': '“The decision was made by the committee.” → “The committee decided.”',
+  preposition: '“the colour of the roof of the house” → “the house’s roof colour”',
+  possessive: '“the plan of the team” → “the team’s plan”',
+  'time-adverb': '“Then, later, it rained.” → “It rained later.”',
+  verbal:
+    '“The man running down the road waved.” → “The man who was running down the road waved.”',
+  'sub-clause':
+    '“Because it rained, we stayed in, although we had planned to walk.” → ' +
+    '“It rained, so we stayed in. We had planned to walk.”',
+  't-unit':
+    '“She arrived, and she sat down, and she ordered coffee.” → “She arrived, sat down and ' +
+    'ordered coffee.”',
+};
+
 const GROUP_DESCRIPTIONS: Record<string, string> = {
   modal:
     'Modals shade possibility and obligation (can, should, must), and each one expands the verb phrase ' +
@@ -282,6 +303,12 @@ export const gsdsTool: Tool = {
       },
     ];
 
-    return { annotations, stats, summary: SUMMARY, groupDescriptions: GROUP_DESCRIPTIONS };
+    return {
+      annotations,
+      stats,
+      summary: SUMMARY,
+      groupDescriptions: GROUP_DESCRIPTIONS,
+      groupExamples: GROUP_EXAMPLES,
+    };
   },
 };

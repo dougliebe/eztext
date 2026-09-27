@@ -114,6 +114,14 @@ export interface ToolResult {
    * so a reader is never left with unexplained highlights.
    */
   groupDescriptions?: Record<string, string>;
+  /**
+   * One short, canonical before → after example per `group`, shown in the
+   * selection inspector under the selected annotation. Keep it generic — the
+   * shape of the fix, not a rewrite of the user's own text. Omit it for groups
+   * that are purely descriptive (surprisal's severity bands already show what
+   * the model expected), but supply all of them when any is supplied.
+   */
+  groupExamples?: Record<string, string>;
 }
 
 /* ------------------------------------------------------------------ */

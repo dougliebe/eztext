@@ -148,6 +148,13 @@ export const readabilityTool: Tool = {
           'carry the argument — but they are where readers lose the thread. Splitting at a clause ' +
           'boundary usually helps.',
       },
+      groupExamples: {
+        complex: '“utilize, demonstrate, facilitate” → “use, show, help”',
+        'long-sentence':
+          '“The report, which the team finished after several delays, was published because the editor ' +
+          'liked it.” → “The team finished the report after several delays. The editor liked it, so it ' +
+          'was published.”',
+      },
     };
   },
 };

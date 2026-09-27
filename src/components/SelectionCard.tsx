@@ -6,6 +6,8 @@ interface SelectionCardProps {
   /** Live model scores, for the alternatives; absent when the text is unscored. */
   scores: SurprisalScores | null;
   text: string;
+  /** Canonical before → after example for the selected annotation's group. */
+  example?: string;
   onClose: () => void;
 }
 
@@ -17,7 +19,7 @@ interface SelectionCardProps {
  * distribution the model had at that position — the point of the surprisal tool
  * is not the number, it is *what else the word could have been*.
  */
-export function SelectionCard({ selection, scores, text, onClose }: SelectionCardProps) {
+export function SelectionCard({ selection, scores, text, example, onClose }: SelectionCardProps) {
   if (!selection) return null;
 
   const word = scores?.words.find((candidate) => candidate.start === selection.start) ?? null;
@@ -55,6 +57,13 @@ export function SelectionCard({ selection, scores, text, onClose }: SelectionCar
         <Alternatives word={word} token={token} />
       ) : (
         <p className="selection__detail">{selection.detail ?? 'No further detail for this range.'}</p>
+      )}
+
+      {example && (
+        <p className="selection__example">
+          <span className="selection__example-label">Example fix</span>
+          <span>{example}</span>
+        </p>
       )}
     </section>
   );
