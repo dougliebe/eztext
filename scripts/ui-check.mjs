@@ -965,6 +965,17 @@ await page.locator('#common-words-ignoreNames').check();
 await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
 
+// Contractions are not vocabulary with a simpler synonym, so the tool and the
+// metric both leave them alone (see `isFamiliarWord`).
+await page.fill('.input__area', "I don't think we've seen it, but they're right.");
+await page.waitForTimeout(300);
+const contractedFlagged = await flaggedNow();
+check(
+  'contractions are not flagged',
+  contractedFlagged.length === 0 && /0 of /.test(await unfamiliarTitle()),
+  contractedFlagged.length === 0 ? await unfamiliarTitle() : contractedFlagged.join(' '),
+);
+
 // --- 11. the prevalence threshold -----------------------------------------
 // The dial lives in the tool's settings, but it is not a tool-only setting: the
 // topbar metric is measured against the same list, so both must move together.

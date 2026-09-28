@@ -161,6 +161,11 @@ function main(): void {
     ['brutalist', false], // absent from the source entirely
     ['revisualization', false], // absent, and not rescued by its stem
     ['1954', true], // a figure, not a word
+    ["don't", true], // contraction, ignored
+    ["we've", true], // contraction, ignored
+    ["isn't", true], // contraction, ignored
+    ["o'clock", true], // contraction, ignored
+    ["zygote's", false], // possessive of an unfamiliar word still flags
   ];
   for (const [word, expected] of familiarity) {
     const actual = isFamiliarWord(word);
@@ -188,6 +193,15 @@ function main(): void {
     computeMetrics('Bletchley is quiet.').unfamiliarWords ===
       computeMetrics('Bletchley is quiet.', { ignoreNames: false }).unfamiliarWords,
     'sentence-initial names are indistinguishable from English capitalisation',
+  );
+
+  // Contractions are ignored by the same shared rule, so the tool and the
+  // topbar both stop asking for a simpler word than "don't".
+  const contracted = computeMetrics("I don't think we've seen it, but they're right.");
+  check(
+    'contractions are not unfamiliar words',
+    contracted.unfamiliarWords === 0 && contracted.unfamiliarShare === 0,
+    `${contracted.unfamiliarWords} unfamiliar of ${contracted.words}`,
   );
 
   console.log(`\n${RULE}\nGolub Syntactic Density Score`);

@@ -445,7 +445,7 @@ and they are the ones with hover tooltips explaining the definition.
 | Words / sentence | `words ÷ sentences` |
 | Chars / word | Letters and digits only — punctuation, spaces and apostrophes excluded. This is the divisor ARI and Coleman–Liau use |
 | % polysyllabic | Share of words with 3+ syllables (estimated from vowel groups) |
-| % unfamiliar | Share of words outside the **common-word list** — the words most US readers know. Figures never count, and proper nouns are ignored by default (`Ignore names`). The bar is adjustable (Common words → Prevalence threshold) |
+| % unfamiliar | Share of words outside the **common-word list** — the words most US readers know. Figures and contractions never count, and proper nouns are ignored by default (`Ignore names`). The bar is adjustable (Common words → Prevalence threshold) |
 | Syllables / word | Estimated with the same vowel-group heuristic |
 
 Each of the five ratios carries a small **percentile chip**, computed from its z-score against the CORPUS
@@ -484,7 +484,7 @@ contributes to that value; clicking the same one again clears it, and only one c
 | Words / sentence | whole sentences | hotter = more words |
 | Chars / word | every word | hotter = more letters |
 | % polysyllabic | only words of 3+ syllables | hotter = more syllables |
-| % unfamiliar | only words off the common-word list, minus names and figures | one flat colour, no ramp |
+| % unfamiliar | only words off the common-word list, minus names, figures and contractions | one flat colour, no ramp |
 | Syllables / word | every word | hotter = more syllables |
 
 Every shade carries a tooltip with the measurement and how it compares within this document
@@ -527,7 +527,7 @@ metric                     mean       sd  p10      p50      p90
 wordsPerSentence        21.2829   9.2330    11.34    20.25    31.33
 charactersPerWord       4.4419   0.4345     3.92     4.40     5.01
 polysyllabicShare       0.0958   0.0600     0.03     0.09     0.18
-unfamiliarShare         0.0230   0.0190     0.01     0.02     0.05
+unfamiliarShare         0.0214   0.0186     0.00     0.02     0.04
 syllablesPerWord        1.4147   0.1649     1.22     1.39     1.63
 ```
 
@@ -546,14 +546,14 @@ metric                  max error  worst at
 wordsPerSentence            8.0 pp  true p75 claimed p67 (z 0.44)
 charactersPerWord           4.1 pp  true p53 claimed p49 (z -0.03)
 polysyllabicShare           6.6 pp  true p47 claimed p40 (z -0.24)
-unfamiliarShare            10.4 pp  true p1 claimed p11 (z -1.21)
+unfamiliarShare            11.5 pp  true p1 claimed p12 (z -1.15)
 syllablesPerWord            6.2 pp  true p52 claimed p46 (z -0.10)
 ```
 
-**Worst case ≈ 10 percentile points.** The four length metrics err most near the *middle* of their
+**Worst case ≈ 11 percentile points.** The four length metrics err most near the *middle* of their
 distributions, where density is highest and the mean/median gap shifts everything along. `unfamiliarShare`
-is the exception: its values are squeezed against zero (median 2%, p10 1%), so its worst error sits at the
-very bottom of the range (true p1, claimed p11). If exact percentiles are ever needed, the fix is to ship
+is the exception: its values are squeezed against zero (median 2%, p10 0%), so its worst error sits at the
+very bottom of the range (true p1, claimed p12). If exact percentiles are ever needed, the fix is to ship
 the quantile table — which is what an earlier revision did, at 6.2 KB.
 
 ### Stats-pane percentiles
@@ -588,8 +588,8 @@ percentile means easier than 92% of excerpts, shown green). And the **GSDS score
 words**, where the instrument's own length-bound caveat applies — the rate variables around it stay,
 since dividing by T-units already removes length.
 
-Two things this makes obvious. First, the corpus averages **2.3% unfamiliar** words — one word in
-forty is outside a 24,600-word knowledge list, and half of what the old, name-inclusive count called
+Two things this makes obvious. First, the corpus averages **2.1% unfamiliar** words — one word in
+fifty is outside a 24,600-word knowledge list, and half of what the old, name-inclusive count called
 unfamiliar was proper nouns — so an absolute "over 10% is hard" rule (which this README previously
 suggested) would fire on almost nothing. Second, that average is what the *threshold* moves: the norms
 are generated with the default floor and the default name filter, and raising the setting makes a
@@ -627,13 +627,16 @@ How well known a word must be is a **setting, not a constant**: the Common words
 embedding service all ask the same `isFamiliarWord`, every one of them moves together — the tool's
 count always equals `% unfamiliar`, at any setting.
 
-**Figures are not vocabulary** (a number has no simpler synonym), and **proper nouns are ignored by
-default** (`Ignore names`, on): the tool, the metric, the heatmap and the embedding service all read the
-same token set, so the count still equals `% unfamiliar`. The heuristic is capitalisation plus sentence
-position, so a name that opens a sentence is indistinguishable from ordinary English capitalisation and
-still counts. This is also why the stored `unfamiliarShare` norm is lower than it was before the filter:
-about half of what the corpus previously scored as unfamiliar vocabulary was names and demonyms
-(`Mr`, `England`, `American`), not words.
+**Figures are not vocabulary** (a number has no simpler synonym), **proper nouns are ignored by
+default** (`Ignore names`, on), and **contractions are ignored outright** (`don't`, `we've`): they too
+have no simpler synonym, and their parts are the function words the survey cannot judge. The tool, the
+metric, the heatmap and the embedding service all read the same rule, so the count still equals
+`% unfamiliar`. The name heuristic is capitalisation plus sentence position, so a name that opens a
+sentence is indistinguishable from ordinary English capitalisation and still counts; the possessive
+`'s` is not a contraction, so `zygote's` still flags on `zygote`. This is also why the stored
+`unfamiliarShare` norm is lower than it was before the filters: about half of what the corpus previously
+scored as unfamiliar vocabulary was names and demonyms (`Mr`, `England`, `American`), with contractions
+and figures taking it down to 2.1%.
 
 Each stored word keeps the score it achieved, so raising the threshold narrows the list without
 touching the generated file: 24,607 words at the floor, 16,412 above 2, and 2,797 above 2.5. Nothing

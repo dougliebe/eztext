@@ -8,8 +8,8 @@
 - The **Common words tool** is in: it flags exactly what `% unfamiliar` counts and, when a flagged word
   is selected, names the nearest common words — by meaning while the local model is running, by word
   family always. The list is the ~24,600 words most US readers know, so ordinary prose is usually clean.
-  Proper nouns are ignored by default and figures are never unfamiliar, in the tool, the metric and the
-  heatmap alike.
+  Proper nouns are ignored by default, and figures and contractions are never unfamiliar, in the tool,
+  the metric and the heatmap alike.
 - The **GSDS tool** (Golub Syntactic Density Score) is in: it ranks the densest T-units, decomposes each
   score into the published variables with the words that earned them, and shows a canonical fix per group.
   `feat/gsds-tool` was merged into `main` (`90f3cb4`, resolved against the common-words/model line) and
@@ -23,7 +23,7 @@
   the same reference prose the topbar uses. Raw counts deliberately have no norm.
 - `main` carries the common-words/model work, the GSDS merge, the inspector gating fix, the name/figure
   rule and the stats-pane norms; pushed to `origin/main`.
-- `npm run build`, `npm run smoke` (232 assertions) and `npm run ui-check` (82 assertions in the browser)
+- `npm run build`, `npm run smoke` (238 assertions) and `npm run ui-check` (83 assertions in the browser)
   all pass on the merged tree.
 
 ## In progress
@@ -324,6 +324,15 @@ the top of the results pane when something in the preview is selected).
   main clause length 11.78 ± 3.68, sub clause length 7.45 ± 2.42. The two metrics that overlap the topbar
   (syllables/word, words/sentence) match the existing norms to 1e-3, which smoke asserts. The generator
   prints the normal-CDF error per stat; worst is 9.4 pp (sub clauses/T-unit).
+- **Contractions are ignored, not checked against the common list** (user request): “don't”, “we've”,
+  “isn't” and friends have no simpler synonym to suggest, and their parts are the function words the
+  prevalence survey cannot judge, so `isFamiliarWord` answers any apostrophe token as familiar — except a
+  possessive `'s`, which still stems to its base (“zygote's” flags on “zygote”). The tool, the metric, the
+  heatmap and the embedding service all follow. The CLEAR norms were regenerated with it:
+  `unfamiliarShare` moved 2.30% ± 1.90pp → 2.14% ± 1.86pp while the other four metrics stayed
+  byte-identical (its worst normal-CDF error is now 11.5 pp, at the bottom of the range). Verified:
+  typecheck, smoke (238 assertions), build, ui-check (83 assertions, including a contraction that is not
+  flagged and still equals the metric).
 
 ## Next steps
 - GSDS Stage 2: window the score to ~200-word blocks at sentence boundaries and average, so long

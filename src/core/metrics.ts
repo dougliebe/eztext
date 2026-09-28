@@ -198,6 +198,10 @@ export interface DocumentMetrics {
  * not "walked" — so the variants matter: without them every unlisted plural
  * would read as an unfamiliar word. Expressed as candidate stem generation: for
  * every suffix that could have been added, the resulting stem is looked up.
+ *
+ * Contractions are ignored entirely (user request): a figure is not vocabulary,
+ * and neither is "don't" — there is no simpler word to swap in. The possessive
+ * "'s" is still stripped, so "zygote's" flags on "zygote".
  */
 export function isFamiliarWord(rawWord: string, threshold: number = COMMON_WORD_FLOOR): boolean {
   const word = rawWord.toLowerCase();
@@ -209,6 +213,14 @@ export function isFamiliarWord(rawWord: string, threshold: number = COMMON_WORD_
   // a raised threshold must not turn "is" or "the" into unfamiliar vocabulary.
   if (FUNCTION_WORDS.has(word)) return true;
   if (isCommonWord(word, threshold)) return true;
+
+  // Contractions are not vocabulary with a simpler synonym: "don't" has no
+  // replacement word, and its parts ("do", "not") are exactly the function words
+  // the prevalence survey cannot judge. Ignore them rather than asking the reader
+  // to substitute. The possessive "'s" is the exception — it falls through to
+  // the stemming below, so "zygote's" still flags on "zygote" — while "'s"
+  // contractions ("it's", "let's", "that's") resolve through those same stems.
+  if (/['\u2019\u02BC]/.test(word) && !/['\u2019\u02BC]s$/.test(word)) return true;
 
   // Hyphenated compounds are familiar when every part is ("afternoon-tea").
   if (word.includes('-')) {
